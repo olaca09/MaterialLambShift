@@ -4,8 +4,13 @@ module MaterialLambShift
 using SpecialFunctions
 using Plots
 using LinearAlgebra
+using StaticArrays
 using QuadGK
 using Debugger
+using HCubature
+
+# For proper execution by pyjulia exported names must be ASCII #
+#                           :c                                 #
 
 # export dlayerresponse
 export dlayerradialresponse
@@ -14,26 +19,32 @@ export hankelplot
 export hankelfcnvalues
 export dlayerresponsecoef
 export coeftoresponse
-export mcutvisual
 export staticresponse
 export dynamicresponse
 export diffresponse
 export asymptdynamicresponse
 export kcheck
 export qcheck
+export localresponseωplot
+export localresponseiωplot
 export disccheck
 export localresponse
 export asymptcheck
 export getν
-export ΔEdrudeiso
-export ΔEdrudecoef
-export ΔEdrudeint
+export ΔEdrudeint1
+export ΔEdrudeint1old
+export ΔEdrudeχ̃
+export ΔEdrudeχ̃plot
+export ΔEdrudeisoold
+export ΔEdrudecoefold
+export ΔEdrudeintold
 export drudeτplot
 export druder0plot
+export mybesselj
 
 ## Variable setup
-const rw::Float64 = 0.1 # Wire width, cm
-const iϵ::Complex = 1e-11im # Causality fixer
+const rw::Float64 = 0.1 # Wire width, ls
+const iϵ::ComplexF64 = 1e-11im # Causality fixer
 
 # Returns tuple of Hankel function coordinates (αE, βE, γE, αB, βB, γB)
 # consistent with a fluctuating dipole at distance rd from the axis of
@@ -44,7 +55,7 @@ function dlayerresponsecoef(ω, m, k, d; rd=1)
     H1w, H2w, H′1w, H′2w, H3w, H′3w = hankelfcnvalues(rw, m, ν)
     H1d, H2d, H′1d, H′2d, H3d, H′3d = hankelfcnvalues(rd, m, ν)
     #println((H1w, H2w, H′1w, H′2w, H3w, H′3w))
-t
+
     # Construct boundary condition matrix
     # (same form as in overleaf document)
     BCmat = [-rd^2*ν*H′1d; H1w; -H1d;     0;           0;              0;;
@@ -138,16 +149,6 @@ function dlayerresponse(r, θ, z, ω, m, k)
                                    );
     end # if
 end # function dlayerresponse
-
-# Plots coefficient norm as a function of m
-function mcutvisual(ω, k, d, maxm)
-    coefs = []
-    for m in 0:maxm
-        push!(coefs, dlayerresponsecoef(ω, m, k, d, rd=1))
-    end # for m in 0:maxm
-    plot(norm.(coefs), title="Coefficient norm", ylabel="vector norm", xlabel="m")
-
-end # function mcutvisual
 
 # Plots dynamic response as a function of r
 function dlayerradialdynresponse(ω, m, k; rd=1, maxr=2, stepr=0.001, minr=0.1)
@@ -255,65 +256,65 @@ function dlayerradialdynresponse(ω, m, k; rd=1, maxr=2, stepr=0.001, minr=0.1)
     Errplot = plot()
     #plot!(rr, abs.(xrr), line_z=imag(log.(xrr)), label="χ^{rr}")
     #plot!(rr, abs.(arr), line_z=imag(log.(arr)), label="asympt. χ^{rr}")
-    plot!(rr, abs.(brr), line_z=angle.(brr), label="asympt. diff. χ^{rr}")
+    #plot!(rr, abs.(brr), line_z=angle.(brr), label="asympt. diff. χ^{rr}")
     plot!(rr, abs.(drr), line_z=angle.(drr), label="diff. χ^{rr}", linewidth=0.5)
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(xrr)), ("r_d", 6, :bottom, :left, :red)))
+    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(drr)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xrr./arr), color=:purple)
     Erθplot = plot()
     #plot!(rr, abs.(xrθ), line_z=imag(log.(xrθ)), label="χ^{rθ}")
     plot!(rr, abs.(drθ), line_z=angle.(drθ), label="diff. χ^{rθ}", linewidth=0.5)
     #plot!(rr, abs.(arθ), line_z=imag(log.(arθ)), label="asympt. χ^{rθ}")
-    plot!(rr, abs.(brθ), line_z=angle.(brθ), label="asympt. diff. χ^{rθ}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(xrθ)), ("r_d", 6, :bottom, :left, :red)))
+    #plot!(rr, abs.(brθ), line_z=angle.(brθ), label="asympt. diff. χ^{rθ}")
+    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(drθ)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xrθ./arθ), color=:purple)
     Erzplot = plot()
     #plot!(rr, abs.(xrz), line_z=imag(log.(xrz)), label="χ^{rz}")
     plot!(rr, abs.(drz), line_z=angle.(drz), label="diff. χ^{rz}", linewidth=0.5)
     #plot!(rr, abs.(arz), line_z=imag(log.(arz)), label="asympt. χ^{rz}")
-    plot!(rr, abs.(brz), line_z=angle.(brz), label="asympt. diff. χ^{rz}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(xrz)), ("r_d", 6, :bottom, :left, :red)))
+    #plot!(rr, abs.(brz), line_z=angle.(brz), label="asympt. diff. χ^{rz}")
+    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(drz)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xrz./arz), color=:purple)
     Eθrplot = plot()
     #plot!(rr, abs.(xθr), line_z=imag(log.(xθr)), label="χ^{θr}")
     plot!(rr, abs.(dθr), line_z=angle.(dθr), label="diff. χ^{θr}", linewidth=0.5)
     #plot!(rr, abs.(aθr), line_z=imag(log.(aθr)), label="asympt. χ^{θr}")
-    plot!(rr, abs.(bθr), line_z=angle.(bθr), label="asympt. diff. χ^{θr}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(xθr)), ("r_d", 6, :bottom, :left, :red)))
+    #plot!(rr, abs.(bθr), line_z=angle.(bθr), label="asympt. diff. χ^{θr}")
+    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dθr)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xθr./aθr), color=:purple)
     Eθθplot = plot()
     #plot!(rr, abs.(xθθ), line_z=imag(log.(xθθ)), label="χ^{θθ}")
     plot!(rr, abs.(dθθ), line_z=angle.(dθθ), label="diff. χ^{θθ}", linewidth=0.5)
     #plot!(rr, abs.(aθθ), line_z=imag(log.(aθθ)), label="asympt. χ^{θθ}")
-    plot!(rr, abs.(bθθ), line_z=angle.(bθθ), label="asympt. diff. χ^{θθ}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(xθθ)), ("r_d", 6, :bottom, :left, :red)))
+    #plot!(rr, abs.(bθθ), line_z=angle.(bθθ), label="asympt. diff. χ^{θθ}")
+    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dθθ)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xθθ./aθθ), color=:purple)
     Eθzplot = plot()
     #plot!(rr, abs.(xθz), line_z=imag(log.(xθz)), label="χ^{θz}")
     plot!(rr, abs.(dθz), line_z=angle.(dθz), label="diff. χ^{θz}", linewidth=0.5)
     #plot!(rr, abs.(aθz), line_z=imag(log.(aθz)), label="asympt. χ^{θz}")
-    plot!(rr, abs.(bθz), line_z=angle.(bθz), label="asympt. diff. χ^{θz}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(xθz)), ("r_d", 6, :bottom, :left, :red)))
+    #plot!(rr, abs.(bθz), line_z=angle.(bθz), label="asympt. diff. χ^{θz}")
+    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dθz)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xθz./aθz), color=:purple)
     Ezrplot = plot()
     #plot!(rr, abs.(xzr), line_z=imag(log.(xzr)), label="χ^{zr}")
     plot!(rr, abs.(dzr), line_z=angle.(dzr), label="diff. χ^{zr}", linewidth=0.5)
     #plot!(rr, abs.(azr), line_z=imag(log.(azr)), label="asympt. χ^{zr}")
-    plot!(rr, abs.(bzr), line_z=angle.(bzr), label="asympt. diff. χ^{zr}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(xzr)), ("r_d", 6, :bottom, :left, :red)))
+    #plot!(rr, abs.(bzr), line_z=angle.(bzr), label="asympt. diff. χ^{zr}")
+    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dzr)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xzr./azr), color=:purple)
     Ezθplot = plot()
     #plot!(rr, abs.(xzθ), line_z=imag(log.(xzθ)), label="χ^{zθ}")
     plot!(rr, abs.(dzθ), line_z=angle.(dzθ), label="diff. χ^{zθ}", linewidth=0.5)
     #plot!(rr, abs.(azθ), line_z=imag(log.(azθ)), label="asympt. χ^{zθ}")
-    plot!(rr, abs.(bzθ), line_z=angle.(bzθ), label="asympt. diff. χ^{zθ}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(xzθ)), ("r_d", 6, :bottom, :left, :red)))
+    #plot!(rr, abs.(bzθ), line_z=angle.(bzθ), label="asympt. diff. χ^{zθ}")
+    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dzθ)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xzθ./azθ), color=:purple)
     Ezzplot = plot()
     #plot!(rr, abs.(xzz), line_z=imag(log.(xzz)), label="χ^{zz}")
     plot!(rr, abs.(dzz), line_z=angle.(dzz), label="diff. χ^{zz}", linewidth=0.5)
     #plot!(rr, abs.(azz), line_z=imag(log.(azz)), label="asympt. χ^{zz}")
-    plot!(rr, abs.(bzz), line_z=angle.(bzz), label="asympt. diff. χ^{zz}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(xzz)), ("r_d", 6, :bottom, :left, :red)))
+    #plot!(rr, abs.(bzz), line_z=angle.(bzz), label="asympt. diff. χ^{zz}")
+    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dzz)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xzz./azz), color=:purple)
     plot(Errplot, Erθplot, Erzplot, Eθrplot, Eθθplot, Eθzplot, Ezrplot, Ezθplot, Ezzplot, 
          layout=(3,3), yscale=:log10, plot_title="ω = $ω, m = $m, k = $k", 
@@ -378,37 +379,37 @@ function dlayerradialresponse(ω, m, k, d=[0; 1; 0]; rd=1, maxr=2, stepr=0.001, 
     xz[abs.(xz) .< ymin] .= ymin
     #println("sr/xr = $((sr./xr)[20])")
     Erplot = plot()
-    plot!(rr, abs.(fr), line_z=imag(log.(fr)), label="E_r")
+    plot!(rr, abs.(fr), line_z=angle.(fr), label="E_r")
     plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(fr)), ("r_d", 6, :bottom, :left, :red)))
-    #plot!(rr, abs.(sr), #line_z=imag(log.(sr)), 
+    #plot!(rr, abs.(sr), #line_z=angle.(sr)), 
           #linestyle=:dash, label="Static E_r")
-    plot!(rr, abs.(xr), line_z=imag(log.(xr)), 
-          linestyle=:dash, label="Dynamic E_r")
+#    plot!(rr, abs.(xr), line_z=angle.(xr)), 
+#          linestyle=:dash, label="Dynamic E_r")
     #plot!(rr, abs.(sr./xr), color=:purple)
     Brplot = plot()
-    plot!(rr, abs.(gr), line_z=imag(log.(gr)), label="B_r")
+    plot!(rr, abs.(gr), line_z=angle.(gr), label="B_r")
     plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(gr)), ("r_d", 6, :bottom, :left, :red)))
     Eθplot = plot()
-    plot!(rr, abs.(fθ), line_z=imag(log.(fθ)), label="E_θ")
+    plot!(rr, abs.(fθ), line_z=angle.(fθ), label="E_θ")
     plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(fθ)), ("r_d", 6, :bottom, :left, :red)))
-    #plot!(rr, abs.(sθ),line_z=imag(log.(sθ)), 
+    #plot!(rr, abs.(sθ),line_z=angle.(sθ)), 
           #linestyle=:dash, label="Static E_θ")
-    plot!(rr, abs.(xθ), line_z=imag(log.(xθ)), 
-          linestyle=:dash, label="Dynamic E_θ")
+    #plot!(rr, abs.(xθ), line_z=angle.(xθ)), 
+          #linestyle=:dash, label="Dynamic E_θ")
     #plot!(rr, abs.(sθ./xθ), color=:purple)
-    Bθplot = plot(rr, abs.(gθ), line_z=imag(log.(gθ)), label="B_θ")
+    Bθplot = plot(rr, abs.(gθ), line_z=angle.(gθ), label="B_θ")
     plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(gθ)), ("r_d", 6, :bottom, :left, :red)))
     Ezplot = plot()
-    plot!(rr, abs.(fz), line_z=imag(log.(fz)), label="E_z")
+    plot!(rr, abs.(fz), line_z=angle.(fz), label="E_z")
     plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(fz)), ("r_d", 6, :bottom, :left, :red)))
-    #plot!(rr, abs.(sz),# line_z=imag(log.(sz)), 
+    #plot!(rr, abs.(sz),# line_z=angle.(sz)), 
           #linestyle=:dash, label="Static E_z")
-    plot!(rr, abs.(xz), line_z=imag(log.(xz)), 
-          linestyle=:dash, label="Dynamic E_z")
+    #plot!(rr, abs.(xz), line_z=angle.(xz)), 
+          #linestyle=:dash, label="Dynamic E_z")
     #plot!(rr, abs.(sz./xz), color=:purple)
-    Bzplot = plot(rr, abs.(gz), line_z=imag(log.(gz)), label="B_z")
+    Bzplot = plot(rr, abs.(gz), line_z=angle.(gz), label="B_z")
     plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(gz)), ("r_d", 6, :bottom, :left, :red)))
-    plot(Erplot, Brplot, Eθplot, Bθplot, Ezplot, Bzplot, layout=(3,2), yscale=:log10, plot_title="ω = $ω, m = $m, k = $k, dz = $(d[3]), dθ=$(d[2]), dr = $(d[1])", legend_position=:topright, legend_font_pointsize=4)
+    plot(Erplot, Brplot, Eθplot, Bθplot, Ezplot, Bzplot, layout=(3,2), yscale=:log10, plot_title="ω = $ω, m = $m, k = $k, dz = $(d[3]), dθ=$(d[2]), dr = $(d[1])", legend_position=:topright, legend_font_pointsize=4, clims=(-pi, pi))
 
 end # function dlayerradialresponse
 
@@ -510,18 +511,33 @@ end # function dynamicresponse
 
 # Returns difference of dynamic wire and free response (Er, Eθ, Ez)^t * (dr, dθ, dz) at distance r,
 # r′ for ω, m, k
-function diffresponse(r, r′, ω, m, k; verbatim=false)
+# Has to be called with causality fix +iϵ to ω
+function diffresponse(r, r′, ω, m, k; verbatim=false, diagonal=false)
     # kcfac = 1e2 #factor to determine kc
     ν = getν(ω, k)
     # Fix large k errors by returning 0 instead
 #    if abs(k) > abs(ω) && abs(ν) > kcfac/abs(r-r′)
 #        return zeros(Complex, 3, 3)
 #    end
-    #Retrieve Hankel fcn values
-    Jw = besselj(m, ν*rw)
-    Yw = bessely(m, ν*rw)
-    J′w = 1/2*(besselj(m-1, ν*rw) - besselj(m+1, ν*rw))
-    Y′w = 1/2*(bessely(m-1, ν*rw) - bessely(m+1, ν*rw))
+
+    # Careful here, should increase performance but might set some values to 0
+    #set_zero_subnormals(true) 
+    
+    Jw = mybesselj(m, ν*rw)
+    Yw = mybessely(m, ν*rw)
+    J′w = 1/2*(mybesselj(m-1, ν*rw) - mybesselj(m+1, ν*rw))
+    Y′w = 1/2*(mybessely(m-1, ν*rw) - mybessely(m+1, ν*rw))
+    Qpref = -2*Jw/(Jw + im*Yw)
+    QBpref = -2*J′w/(J′w + im*Y′w)
+    
+    # I suspect that the nan-check is no longer needed anymore, couldn't find
+    # the right parameters to test it though
+    if isnan(Qpref)
+        Qpref = 0
+    end # if
+    if isnan(QBpref)
+        QBpref = 0
+    end # if
     H1 = hankelh1(m, ν*r) #
     H1′ = hankelh1(m, ν*r′)
     H′1 = 1/2*(hankelh1(m-1, ν*r) - hankelh1(m+1, ν*r)) #
@@ -539,6 +555,10 @@ function diffresponse(r, r′, ω, m, k; verbatim=false)
 #        println("H1′ = $H1′")
 #        println("H2′ = $H2′")
 #        println("H′1′ = $H′1′")
+#        println("Jw = $Jw")
+#        println("Yw = $Yw")
+#        println("J′w = $J′w")
+#        println("Y′w = $Y′w")
 #        println("H′2′ = $H′2′")
 #        println("Qr = $Qr")
 #        println("Qr′ = $Qr′")
@@ -549,28 +569,61 @@ function diffresponse(r, r′, ω, m, k; verbatim=false)
 #        println("QB′r = $QB′r")
 #        println("QB′r′ = $QB′r′")
 #    end # if
-    if r > r′
-        #Retrieve Hankel fcn values
-        Qr′ = -2*Jw/(Jw + im*Yw)*H1′
-        QBr′ = -2*J′w/(J′w + im*Y′w)*H1′ 
-        Q′r′ = -2*Jw/(Jw + im*Yw)*H′1′ 
-        QB′r′ = -2*J′w/(J′w + im*Y′w)*H′1′ 
-        return im/(32*pi^2)*(
-                             [im*k*H′1; -k*m/(r*ν)*H1; ν*H1] *
-                             [-im*k*Q′r′;; -k*m/(ν*r′)*Qr′;; ν*Qr′]
-                             + ω^2*[-im*m/(r*ν)*H1; H′1; 0] *
-                             [im*m/(r′*ν)*QBr′;; QB′r′;; 0])
-    else
-        Qr = -2*Jw/(Jw + im*Yw)*H1
-        QBr = -2*J′w/(J′w + im*Y′w)*H1
-        Q′r = -2*Jw/(Jw + im*Yw)*H′1
-        QB′r = -2*J′w/(J′w + im*Y′w)*H′1
-        return im/(32*pi^2)*(
-                             [im*k*Q′r; -k*m/(r*ν)*Qr; ν*Qr] *
-                             [-im*k*H′1′;; -k*m/(ν*r′)*H1′;; ν*H1′]
-                             + ω^2*[-im*m/(r*ν)*QBr; QB′r; 0] *
-                             [im*m/(r′*ν)*H1′;; H′1′;; 0])
+    if !diagonal
+        if r > r′
+            #Retrieve Hankel fcn values
+            Qr′ = Qpref*H1′
+            QBr′ = QBpref*H1′ 
+            Q′r′ = Qpref*H′1′ 
+            QB′r′ = QBpref*H′1′ 
+            χ = SMatrix{3, 3}(im/(32*pi^2)*(
+                                 [im*k*H′1; -k*m/(r*ν)*H1; ν*H1] *
+                                 [-im*k*Q′r′;; -k*m/(ν*r′)*Qr′;; ν*Qr′]
+                                 + ω^2*[-im*m/(r*ν)*H1; H′1; 0] *
+                                 [im*m/(r′*ν)*QBr′;; QB′r′;; 0]))
+        else
+            Qr = Qpref*H1
+            QBr = QBpref*H1 
+            Q′r = Qpref*H′1 
+            QB′r = QBpref*H′1 
+            χ = SMatrix{3, 3}(im/(32*pi^2)*(
+                                 [im*k*Q′r; -k*m/(r*ν)*Qr; ν*Qr] *
+                                 [-im*k*H′1′;; -k*m/(ν*r′)*H1′;; ν*H1′]
+                                 + ω^2*[-im*m/(r*ν)*QBr; QB′r; 0] *
+                                 [im*m/(r′*ν)*H1′;; H′1′;; 0]))
+        end
+    else # Avoids integrating unnecessary elements for localresponse
+        if r > r′
+            Qr′ = Qpref*H1′
+            QBr′ = QBpref*H1′ 
+            Q′r′ = Qpref*H′1′ 
+            QB′r′ = QBpref*H′1′ 
+            χ = SMatrix{3, 3}(im/(32*pi^2)*diagm([k^2*H′1*Q′r′ + ω^2*m^2/(r*r′*ν^2)*H1*QBr′,
+                                        k^2*m^2/(ν^2*r*r′)*H1*Qr′ + ω^2*H′1*QB′r′,
+                                        ν^2*H1*Qr′]))
+        else
+            Qr = Qpref*H1
+            QBr = QBpref*H1 
+            Q′r = Qpref*H′1 
+            QB′r = QBpref*H′1 
+            #println("Q-prefactor = $Qpref")
+            #println("Q′-prefactor = $QBpref")
+            #println("Qr = $Qr, QBr = $QBr, Q′r = $Q′r, QB′r = $QB′r, H1r = $H1, H′1 = $H′1")
+            #println("H1 = $H1")
+            χ = SMatrix{3, 3}(im/(32*pi^2)*diagm([k^2*Q′r*H′1′ + ω^2*m^2/(r*r′*ν^2)*QBr*H1′,
+                                        k^2*m^2/(ν^2*r*r′)*Qr*H1′ + ω^2*QB′r*H′1′,
+                                        ν^2*Qr*H1′]))
+        end
     end
+    # Set NaN values to zero. So far these have only been seen for large im
+    # ω such that response limits to zero.
+    #χ[isnan.(χ)] .= 0
+    # Set real response to real as soon as possible
+    if real(ω) == 0
+        return real.(χ)
+    else 
+        return χ
+    end # if
 end # function dynamicresponse
 # Returns low-ν asymptote for the diff. response
 function asymptdiffresponse(r, r′, ω, m, k)
@@ -607,6 +660,164 @@ function asymptdynamicresponse(r, r′, ω, m, k)
     end
 end
 
+# Plots the local renormalized response vs ω for a given r
+function localresponseωplot(r; ωmin=-20, ωstep=0.1, ωmax=20)
+    ωω = ωmin:ωstep:ωmax
+    χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
+    for ω in ωω
+
+        χ = localresponse(r, ω + iϵ)
+        push!(χrr, χ[1, 1])
+        push!(χθr, χ[2, 1])
+        push!(χzr, χ[3, 1])
+        push!(χrθ, χ[1, 2])
+        push!(χθθ, χ[2, 2])
+        push!(χzθ, χ[3, 2])
+        push!(χrz, χ[1, 3])
+        push!(χθz, χ[2, 3])
+        push!(χzz, χ[3, 3])
+        println("ω = $ω has been integrated")
+    end # for
+    # Mask low values, for now
+    ymin = 1e-10
+    χrr[abs.(χrr) .< ymin] .= ymin
+    χrθ[abs.(χrθ) .< ymin] .= ymin
+    χrz[abs.(χrz) .< ymin] .= ymin
+    χθr[abs.(χθr) .< ymin] .= ymin
+    χθθ[abs.(χθθ) .< ymin] .= ymin
+    χθz[abs.(χθz) .< ymin] .= ymin
+    χzr[abs.(χzr) .< ymin] .= ymin
+    χzθ[abs.(χzθ) .< ymin] .= ymin
+    χzz[abs.(χzz) .< ymin] .= ymin
+    χrrplot = plot(ωω, abs.(χrr), line_z=imag(log.(χrr)), 
+                  label="χrr")
+    χθrplot = plot(ωω, abs.(χθr), line_z=imag(log.(χθr)), 
+                  label="χθr")
+    χzrplot = plot(ωω, abs.(χzr), line_z=imag(log.(χzr)), 
+                  label="χzr")
+    χrθplot = plot(ωω, abs.(χrθ), line_z=imag(log.(χrθ)), 
+                  label="χrθ")
+    χθθplot = plot(ωω, abs.(χθθ), line_z=imag(log.(χθθ)), 
+                  label="χθθ")
+    χzθplot = plot(ωω, abs.(χzθ), line_z=imag(log.(χzθ)), 
+                  label="χzθ")
+    χrzplot = plot(ωω, abs.(χrz), line_z=imag(log.(χrz)), 
+                  label="χrz")
+    χθzplot = plot(ωω, abs.(χθz), line_z=imag(log.(χθz)), 
+                  label="χθz")
+    χzzplot = plot(ωω, abs.(χzz), line_z=imag(log.(χzz)), 
+                  label="χzz")
+    plot(χrrplot, χrθplot, χrzplot, χθrplot, χθθplot, χθzplot, χzrplot, χzθplot, χzzplot, layout=(3,3), title="Local response", yscale=:log10, size=(800, 500), clims=(0, pi))
+end # function localresponseωplot
+
+# Plots the local renormalized response vs imaginary ω for a given r
+# Also plots a Drude functional form 1/iω * 1/(iω-τ-1)
+function localresponseiωplot(r; ωmin=0, ωstep=0.1, ωmax=20, τ=1)
+    ωω = im*(ωmin:ωstep:ωmax)
+    χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
+    for ω in ωω
+
+        χ = localresponse(r, ω + iϵ)
+        push!(χrr, χ[1, 1])
+        push!(χθr, χ[2, 1])
+        push!(χzr, χ[3, 1])
+        push!(χrθ, χ[1, 2])
+        push!(χθθ, χ[2, 2])
+        push!(χzθ, χ[3, 2])
+        push!(χrz, χ[1, 3])
+        push!(χθz, χ[2, 3])
+        push!(χzz, χ[3, 3])
+        #println("ω = $ω has been integrated")
+    end # for
+    # Mask low values, for now
+    ymin = 1e-10
+    χrr[abs.(χrr) .< ymin] .= ymin
+    χrθ[abs.(χrθ) .< ymin] .= ymin
+    χrz[abs.(χrz) .< ymin] .= ymin
+    χθr[abs.(χθr) .< ymin] .= ymin
+    χθθ[abs.(χθθ) .< ymin] .= ymin
+    χθz[abs.(χθz) .< ymin] .= ymin
+    χzr[abs.(χzr) .< ymin] .= ymin
+    χzθ[abs.(χzθ) .< ymin] .= ymin
+    χzz[abs.(χzz) .< ymin] .= ymin
+    ωω = abs.(ωω) # Fixes axis for plotting
+    
+    # Computes drude form for comparison
+    ceiling = maximum(abs.([χrr; χθθ; χzz]))
+    println(ceiling)
+    drude = map(x -> 1/x*1/(x-τ^-1), ωω)
+    drude[drude .> ceiling] .= ceiling
+    drude[drude .< ymin] .= ymin
+
+    χrrplot = plot(ωω, abs.(χrr), line_z=imag(log.(χrr)), 
+                  label="χrr")
+    #plot!(ωω, drude, label="Drude form")
+    χθrplot = plot(ωω, abs.(χθr), line_z=imag(log.(χθr)), 
+                  label="χθr")
+    χzrplot = plot(ωω, abs.(χzr), line_z=imag(log.(χzr)), 
+                  label="χzr")
+    χrθplot = plot(ωω, abs.(χrθ), line_z=imag(log.(χrθ)), 
+                  label="χrθ")
+    χθθplot = plot(ωω, abs.(χθθ), line_z=imag(log.(χθθ)), 
+                  label="χθθ")
+    χzθplot = plot(ωω, abs.(χzθ), line_z=imag(log.(χzθ)), 
+                  label="χzθ")
+    χrzplot = plot(ωω, abs.(χrz), line_z=imag(log.(χrz)), 
+                  label="χrz")
+    χθzplot = plot(ωω, abs.(χθz), line_z=imag(log.(χθz)), 
+                  label="χθz")
+    χzzplot = plot(ωω, abs.(χzz), line_z=imag(log.(χzz)), 
+                  label="χzz")
+    plot(χrrplot, χrθplot, χrzplot, χθrplot, χθθplot, χθzplot, χzrplot, χzθplot, χzzplot, layout=(3,3), title="Local response", yscale=:log10, xlabel="Im(ω)", size=(800, 500), clims=(0,pi))
+end # function localresponseωplot
+
+# Plots the ω integrand for drude response vs im. ω for a given r, r0
+function drudeint1plot(r, r0; ymin=0, ystep=0.1, ymax=20, τ=1)
+    yy = (ymin:ystep:ymax)
+    inta, intb = [[] for _ in 1:2]
+
+    χ0 = localresponse(r, iϵ)
+    χτ = localresponse(r, im*τ^-1)
+
+    a = √(r^2-r0^2)
+    χ̃0 = a/r*χ0[1,1] + r0/(a*r)*χ0[2,2] .- r/a*χ0[3,3]
+    χ̃τ = a/r*χτ[1,1] + rτ/(a*r)*χτ[2,2] .- r/a*χτ[3,3]
+
+    for y in yy
+        χ = localresponse(r, im*y)
+        χ̃ = a/r*χ[1,1] + r0/(a*r)*χ[2,2] - r/a*χ[3,3]
+        push!(inta, (χ̃ - χ̃0)/(y*(y-τ^-1)))
+        push!(intb, (χ̃ - χ̃τ)/(y*(y-τ^-1)))
+    end # for
+    ymin = 1e-10
+
+    # Mask low values, for now
+    χrr[abs.(χrr) .< ymin] .= ymin
+    χθθ[abs.(χθθ) .< ymin] .= ymin
+    χzz[abs.(χzz) .< ymin] .= ymin
+    ωω = abs.(ωω) # Fixes axis for plotting
+
+    χrrplot = plot(ωω, abs.(χrr), line_z=imag(log.(χrr)), 
+                  label="χrr")
+    #plot!(ωω, drude, label="Drude form")
+    χθrplot = plot(ωω, abs.(χθr), line_z=imag(log.(χθr)), 
+                  label="χθr")
+    χzrplot = plot(ωω, abs.(χzr), line_z=imag(log.(χzr)), 
+                  label="χzr")
+    χrθplot = plot(ωω, abs.(χrθ), line_z=imag(log.(χrθ)), 
+                  label="χrθ")
+    χθθplot = plot(ωω, abs.(χθθ), line_z=imag(log.(χθθ)), 
+                  label="χθθ")
+    χzθplot = plot(ωω, abs.(χzθ), line_z=imag(log.(χzθ)), 
+                  label="χzθ")
+    χrzplot = plot(ωω, abs.(χrz), line_z=imag(log.(χrz)), 
+                  label="χrz")
+    χθzplot = plot(ωω, abs.(χθz), line_z=imag(log.(χθz)), 
+                  label="χθz")
+    χzzplot = plot(ωω, abs.(χzz), line_z=imag(log.(χzz)), 
+                  label="χzz")
+    plot(χrrplot, χrθplot, χrzplot, χθrplot, χθθplot, χθzplot, χzrplot, χzθplot, χzzplot, layout=(3,3), title="Local response", yscale=:log10, xlabel="Im(ω)", size=(800, 500), clims=(0,pi))
+end # function localresponseωplot
 
 # Plots the dynamic, static and LSE response vs k for a given r
 function kcheck(r, ω, m; kmin=0.0001, kstep=0.001, kmax=1, rd=1)
@@ -716,42 +927,42 @@ function kcheck(r, ω, m; kmin=0.0001, kstep=0.001, kmax=1, rd=1)
 #    χszzplot = plot(kk, abs.(χszz), #line_z=imag(log.(χszz)), 
 #                  label="χszz")
 #    plot(χsrrplot, χsrθplot, χsrzplot, χsθrplot, χsθθplot, χsθzplot, χszrplot, χszθplot, χszzplot, layout=(3,3), title="Static", yscale=:log10)
-    χxrrplot = plot(kk, abs.(χxrr), #line_z=imag(log.(χxrr)), 
-                  label="χxrr")
-    χxθrplot = plot(kk, abs.(χxθr), #line_z=imag(log.(χxθr)), 
-                  label="χxθr")
-    χxzrplot = plot(kk, abs.(χxzr), #line_z=imag(log.(χxzr)), 
-                  label="χxzr")
-    χxrθplot = plot(kk, abs.(χxrθ), #line_z=imag(log.(χxrθ)), 
-                  label="χxrθ")
-    χxθθplot = plot(kk, abs.(χxθθ), #line_z=imag(log.(χxθθ)), 
-                  label="χxθθ")
-    χxzθplot = plot(kk, abs.(χxzθ), #line_z=imag(log.(χxzθ)), 
-                  label="χxzθ")
-    χxrzplot = plot(kk, abs.(χxrz), #line_z=imag(log.(χxrz)), 
-                  label="χxrz")
-    χxθzplot = plot(kk, abs.(χxθz), #line_z=imag(log.(χxθz)), 
-                  label="χxθz")
-    χxzzplot = plot(kk, abs.(χxzz), #line_z=imag(log.(χxzz)), 
-                  label="χxzz")
-    plot(χxrrplot, χxrθplot, χxrzplot, χxθrplot, χxθθplot, χxθzplot, χxzrplot, χxzθplot, χxzzplot, layout=(3,3), title="Dynamic", yscale=:log10)
-    χdrrplot = plot(kk, abs.(χdrr), #line_z=imag(log.(χdrr)), 
+#    χxrrplot = plot(kk, abs.(χxrr), line_z=imag(log.(χxrr)), 
+#                  label="χxrr")
+#    χxθrplot = plot(kk, abs.(χxθr), line_z=imag(log.(χxθr)), 
+#                  label="χxθr")
+#    χxzrplot = plot(kk, abs.(χxzr), line_z=imag(log.(χxzr)), 
+#                  label="χxzr")
+#    χxrθplot = plot(kk, abs.(χxrθ), line_z=imag(log.(χxrθ)), 
+#                  label="χxrθ")
+#    χxθθplot = plot(kk, abs.(χxθθ), line_z=imag(log.(χxθθ)), 
+#                  label="χxθθ")
+#    χxzθplot = plot(kk, abs.(χxzθ), line_z=imag(log.(χxzθ)), 
+#                  label="χxzθ")
+#    χxrzplot = plot(kk, abs.(χxrz), line_z=imag(log.(χxrz)), 
+#                  label="χxrz")
+#    χxθzplot = plot(kk, abs.(χxθz), line_z=imag(log.(χxθz)), 
+#                  label="χxθz")
+#    χxzzplot = plot(kk, abs.(χxzz), line_z=imag(log.(χxzz)), 
+#                  label="χxzz")
+#    plot(χxrrplot, χxrθplot, χxrzplot, χxθrplot, χxθθplot, χxθzplot, χxzrplot, χxzθplot, χxzzplot, layout=(3,3), title="Dynamic", yscale=:log10)
+    χdrrplot = plot(kk, abs.(χdrr), line_z=imag(log.(χdrr)), 
                   label="χdrr")
-    χdθrplot = plot(kk, abs.(χdθr), #line_z=imag(log.(χdθr)), 
+    χdθrplot = plot(kk, abs.(χdθr), line_z=imag(log.(χdθr)), 
                   label="χdθr")
-    χdzrplot = plot(kk, abs.(χdzr), #line_z=imag(log.(χdzr)), 
+    χdzrplot = plot(kk, abs.(χdzr), line_z=imag(log.(χdzr)), 
                   label="χdzr")
-    χdrθplot = plot(kk, abs.(χdrθ), #line_z=imag(log.(χdrθ)), 
+    χdrθplot = plot(kk, abs.(χdrθ), line_z=imag(log.(χdrθ)), 
                   label="χdrθ")
-    χdθθplot = plot(kk, abs.(χdθθ), #line_z=imag(log.(χdθθ)), 
+    χdθθplot = plot(kk, abs.(χdθθ), line_z=imag(log.(χdθθ)), 
                   label="χdθθ")
-    χdzθplot = plot(kk, abs.(χdzθ), #line_z=imag(log.(χdzθ)), 
+    χdzθplot = plot(kk, abs.(χdzθ), line_z=imag(log.(χdzθ)), 
                   label="χdzθ")
-    χdrzplot = plot(kk, abs.(χdrz), #line_z=imag(log.(χdrz)), 
+    χdrzplot = plot(kk, abs.(χdrz), line_z=imag(log.(χdrz)), 
                   label="χdrz")
-    χdθzplot = plot(kk, abs.(χdθz), #line_z=imag(log.(χdθz)), 
+    χdθzplot = plot(kk, abs.(χdθz), line_z=imag(log.(χdθz)), 
                   label="χdθz")
-    χdzzplot = plot(kk, abs.(χdzz), #line_z=imag(log.(χdzz)), 
+    χdzzplot = plot(kk, abs.(χdzz), line_z=imag(log.(χdzz)), 
                   label="χdzz")
     plot(χdrrplot, χdrθplot, χdrzplot, χdθrplot, χdθθplot, χdθzplot, χdzrplot, χdzθplot, χdzzplot, layout=(3,3), title="Diff.", yscale=:log10)
 #    Errplot = plot(kk, abs.(Err), #line_z=imag(log.(Err)), 
@@ -843,40 +1054,139 @@ end # function disccheck
 function localresponse(r, ω)
     maxk = 3*abs(ω) # This could maybe be refined for ω imaginary
     if real(ω) == 0
-        maxk = 10*abs(ω)/r
+        maxk = 100*r^-1
     end # if
     #println(maxk)
-    mcutq = 1e-6
-    mcuta = 1e-50 # Absolute value m-cutoff to prevent runaway loop
-    χ = zeros(Complex, 3, 3)
-    m = 0
+    mcutq::Float64 = 1e-6
+    mcuta::Float64 = 1e-50 # Absolute value m-cutoff to prevent runaway loop
+    χ = @SMatrix zeros(Complex, 3, 3)
+    χm = @SMatrix zeros(Complex, 3, 3)
+    m::Int64 = 0
     while true
         #println("m = $m")
-        χm = quadgk((k -> diffresponse(r, r, ω + iϵ, m, k)), -maxk, maxk)[1]
-        χ = χ .+ 2*χm
+        χm = (quadgk((k -> diffresponse(r, r, ω + iϵ, m, k, diagonal=true)), -maxk, maxk)::Tuple{SMatrix{3, 3}, Float64})[1]
+        # The above quadgk is type unstable, limiting performance
+
+        χ::SMatrix{3, 3, Complex, 9} = χ + 2 *χm
         if m == 0
             χ = χ ./ 2
         end # if
         #println(χm)
-        if norm(χm)/norm(χ) < mcutq || norm(χm) < mcuta
+        χmnorm::Float64 = norm(χm)
+        if χmnorm/norm(χ) < mcutq || χmnorm < mcuta
             #println("Broke sum over m at m = $m")
             break
         end # if
         m += 1
     end # for
-    χ[1, 2] = 0
-    χ[2, 1] = 0
-    χ[3, 2] = 0
-    χ[2, 3] = 0
     return χ
 end # function localresponse
 
-# Integrates the energy shifft due to an isotropic Drude ES response with relaxation time
+# Integrates the A coefficient for ΔE due to the anis. part of an 
+# anisotropic Drude ES response with relaxation time τ and conductivity 
+# anis. δσ.
+# The ES plane is taken to have smallest distance r0 to the wire centre
+function ΔEdrudecoef(τ, δσ, r0)
+    # Integration over x direction
+    maxrq = 1e7
+    rint = quadgk(r -> ΔEdrudeint1(r, τ, r0), r0, maxrq*r0)
+    return -δσ/(32*pi*τ)*rint
+end # function ΔEdrude
+
+function ΔEdrudeint2(r, τ, r0)
+    maxrq = 1e7
+    intfull = quadgk(r -> ΔEdrudeint1(r, τ, r0), r0, maxrq*r0)[1]
+    return intfull
+end # function ΔEdrudeint1
+
+function ΔEdrudeint1old(r, r0, τ)
+    maxωq = 1e7 # Confirmed to be enough for (10, 1, 1)
+    χ̃0 = ΔEdrudeχ̃(0, r, r0)
+    χ̃τ = ΔEdrudeχ̃(im*τ^-1, r, r0)
+    inta = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃0)/(y*(y-τ^-1)), -maxωq*τ^-1, 0, τ^-1/2)[1]
+    println("First integral done")
+    intb = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃τ)/(y*(y-τ^-1)), τ^-1/2, τ^-1,maxωq*τ^-1)[1]
+    println("Second integral done")
+    return inta + intb
+end # function ΔEdrudeint1
+
+function ΔEdrudeint1(r, r0, τ)
+    α = 1000 # Lower cutoff for pole handling
+    β = 10000 # Upper cutoff for pole handling
+    maxωq = 1e6 # Confirmed to be enough for (10, 1, 1)
+
+
+    χ̃0 = ΔEdrudeχ̃(0, r, r0)
+    χ̃τ = ΔEdrudeχ̃(im*τ^-1, r, r0)
+    χ̃0f(y) = y > -α*τ^-1 ? χ̃0 : 0
+    χ̃τf(y) = y < β*τ^-1 ? χ̃τ : 0
+
+    intb = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃τf(y))/(y*(y-τ^-1)), τ^-1/2, τ^-1,maxωq*τ^-1)[1]
+    println("Second integral done")
+    inta = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃0f(y))/(y*(y-τ^-1)), -maxωq*τ^-1, 0, τ^-1/2)[1]
+    println("First integral done")
+    vanish = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃τf(y))/(y*(y-τ^-1)), -1e8, -α*τ^-1)[1]
+    println("Correction: $(χ̃τ*log(1 - β^-1) - χ̃0*log(1 + α^-1))")
+    println("This should be vanishing: $vanish")
+    return inta + intb + χ̃τ*log(1 - β^-1) - χ̃0*log(1 + α^-1)
+end # function ΔEdrudeint1
+
+function ΔEdrudeint(r, r0, τ)
+    maxωq = 1e7
+    maxrq = 1e7
+    inta = hcubature(y, r -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(0, r, r0))/(y*(y-τ^-1)),
+                     (-maxωq*τ^-1, r0), (0, τ^-1/2)[1])
+    println("First integral done")
+    intb = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(im*τ^-1, r, r0))/(y*(y-τ^-1)), τ^-1/2, τ^-1,maxωq*τ^-1)[1]
+    println("Second integral done")
+    return inta + intb
+end # function ΔEdrudeint1
+
+# Integrands for ΔEdrudecoef, factor δσ/2 off from paper version
+function ΔEdrudeχ̃(ω, r, r0)
+    a = √(r^2-r0^2)
+    χ = localresponse(r, ω)
+    χ̃ = a/r*χ[1, 1] + r0/(a*r)*χ[2, 2] - r/a*χ[3, 3]
+    return χ̃
+end # function ΔEdrudeχ̃
+
+# Plots integrands for ΔEdrudeint1 as a function of y
+function ΔEdrudeχ̃plot(r, r0, τ; ymin=-5, ystep=0.01, ymax=5)
+    yy = ymin:ystep:ymax
+    χ̃0 = ΔEdrudeχ̃(0, r, r0)
+    χ̃τ = ΔEdrudeχ̃(im*τ^-1, r, r0)
+    integ1 = []
+    integ2 = []
+
+    println("χ̃0 = $χ̃0")
+    println("χ̃τ = $χ̃τ")
+
+    for y in yy
+        χ̃ = ΔEdrudeχ̃(im*y, r, r0)
+
+        push!(integ1, (χ̃-χ̃0)/(y*(y-τ^-1)))
+        push!(integ2, (χ̃-χ̃τ)/(y*(y-τ^-1)))
+        println("y = $y done!")
+    end # for
+    # Mask low values, for now
+#    ymin = 1e-10
+#    χzθ[abs.(χzθ) .< ymin] .= ymin
+#    χzz[abs.(χzz) .< ymin] .= ymin
+
+    integralplot = plot(yy, abs.(integ1), 
+                        label="Integrand 1", size=(800, 500), title="Integrands")
+    plot!(yy, abs.(integ2), 
+                  label="Integrand 2", yscale=:log10)
+    #plot!([τ^-1], seriestype=:vline, label="", color=:red, annotations=(τ^-1*1.1, minimum(abs.(integ1)), ("τ^-1'", 6, :bottom, :left, :red)))
+end # function ΔEdrudeχ̃plot
+
+# Integrates the energy shift due to an isotropic Drude ES response with relaxation time
 # τ and base conductivity σ0. 
 # The ES plane is taken to have smallest distance r0 to the wire centre
-function ΔEdrudeiso(τ, σ0, r0)
+# This is according to the ´´old'' formula
+function ΔEdrudeisoold(τ, σ0, r0)
     # Integrand for real space integration
-    ωint = r -> (im*σ0*tr(localresponse(r, iϵ) + τ/im*localresponse(r, im*τ^-1)))
+    ωint = r -> (im*σ0*tr(localresponse(r, iϵ) - localresponse(r, im*τ^-1)))
     # Integration over non-z direction
     ΔE = quadgk(r -> r/√(r^2-r0^2)*ωint(r), r0, Inf)[1]
 
@@ -887,28 +1197,31 @@ end # function ΔEdrudeiso
 # anisotropic Drude ES response with relaxation time τ and conductivity 
 # anis. δσ.
 # The ES plane is taken to have smallest distance r0 to the wire centre
-function ΔEdrudecoef(τ, δσ, r0)
+# This is according to the ´´old'' formula
+function ΔEdrudecoefold(τ, δσ, r0)
     # Integration over x direction
     maxrq = 1e7
-    A = quadgk(r -> δσ/2*ΔEdrudeint(r, τ, r0), r0, r0*maxrq)[1]
+    A = imag(quadgk(r -> -im*δσ/8*ΔEdrudeintold(r, τ, r0), r0, r0*maxrq)[1]) # Currently factor i off
     return A
 end # function ΔEdrude
 
 # Integrands for ΔEdrudecoef, factor δσ/2 off from paper version
-function ΔEdrudeint(r, τ, r0)
+# This is according to the ´´old'' formula
+function ΔEdrudeintold(r, τ, r0)
     a = √(r^2-r0^2)
-    χ̃ = localresponse(r, iϵ) - im*τ*localresponse(r, im*τ^-1)
-    A = real(im*(a/r*χ̃[1, 1] + r0^2/(r*a)*χ̃[2, 2] - r/a*χ̃[3, 3]))
+    χ̃ = localresponse(r, iϵ) - localresponse(r, im*τ^-1)
+    A = a/r*χ̃[1, 1] + r0^2/(r*a)*χ̃[2, 2] - r/a*χ̃[3, 3]
     return A
 end # function ΔEdrudeint
 
 # Plots (maximum) energy shift dependance due to the anis. part of Drude ES
 # response as a function of relaxation time τ
-function drudeτplot(δσ, r0; τmin=0.1, τstep=0.1, τmax=5)
+# This is according to the ´´old'' formula
+function drudeτplotold(δσ, r0; τmin=0.1, τstep=0.1, τmax=5)
     ττ = τmin:τstep:τmax
     EE = []
     for τ in ττ
-        E = ΔEdrudecoef(τ, δσ, r0)
+        E = ΔEdrudecoefold(τ, δσ, r0)
         push!(EE, E)
         println("τ = $τ has been integrated!")
     end # for
@@ -917,11 +1230,12 @@ end # function drudeτplot
 
 # Plots (maximum) energy shift dependance due to the anis. part of Drude ES
 # response as a function of wire distance r0
-function druder0plot(δσ, τ; r0min=0.1, r0step=0.1, r0max=5)
+# This is according to the ´´old'' formula
+function druder0plotold(δσ, τ; r0min=0.1, r0step=0.1, r0max=5)
     rr = r0min:r0step:r0max
     EE = []
     for r0 in rr
-        E = ΔEdrudecoef(τ, δσ, r0)
+        E = ΔEdrudecoefold(τ, δσ, r0)
         push!(EE, E)
         println("r0 = $r0 has been integrated!")
     end # for
@@ -1104,9 +1418,34 @@ function asymptcheck(r, r′, m; minν=0.00000001, stepν=0.001, maxν=1)
     plot(Hplot, phaseplot, Qplot, H′plot, Q′plot, HQplot, H′Qplot, HQ′plot, H′Q′plot, layout=[5,4])
 end
 
-# Returns the chosen branch of ν=√(ω^2 - k^2)
+
 function getν(ω, k)
+    k = abs(k) # Removes analyt. n k over k=0, but retains b.c.
     return im*√Complex(k-ω)*√Complex(ω+k)
 end # function ν
+
+# Wrapper for besselj returning zero for too large arguments
+# Should only be paired with something going to 0 faster than besselj
+function mybesselj(m, z)
+    try 
+        return besselj(m, z)
+    catch e
+        if e == SpecialFunctions.AmosException(2)
+            return 0
+        end
+    end
+end # function mybesselj
+
+# Wrapper for bessely returning zero for too large arguments
+# Should only be paired with something going to 0 faster than bessely
+function mybessely(m, z)
+    try 
+        return bessely(m, z)
+    catch e
+        if e == SpecialFunctions.AmosException(2)
+            return 0
+        end
+    end
+end # function mybesselj
 
 end # module MaterialLambShift

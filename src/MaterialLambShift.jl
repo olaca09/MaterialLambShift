@@ -32,7 +32,6 @@ export localresponse
 export asymptcheck
 export getν
 export ΔEdrudeint1
-export ΔEdrudeint1old
 export ΔEdrudeχ̃
 export ΔEdrudeχ̃plot
 export ΔEdrudeisoold
@@ -1093,53 +1092,60 @@ function ΔEdrudecoef(τ, δσ, r0)
     return -δσ/(32*pi*τ)*rint
 end # function ΔEdrude
 
+# Integrates the energy shift along r, after doing ω
 function ΔEdrudeint2(r, τ, r0)
-    maxrq = 1e7
-    intfull = quadgk(r -> ΔEdrudeint1(r, τ, r0), r0, maxrq*r0)[1]
+    maxrq = 2
+    intfull = quadgk(r -> ΔEdrudeint1(r, τ, r0), r0, maxrq*r0)
     return intfull
 end # function ΔEdrudeint1
 
-function ΔEdrudeint1old(r, r0, τ)
-    maxωq = 1e7 # Confirmed to be enough for (10, 1, 1)
-    χ̃0 = ΔEdrudeχ̃(0, r, r0)
-    χ̃τ = ΔEdrudeχ̃(im*τ^-1, r, r0)
-    inta = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃0)/(y*(y-τ^-1)), -maxωq*τ^-1, 0, τ^-1/2)[1]
-    println("First integral done")
-    intb = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃τ)/(y*(y-τ^-1)), τ^-1/2, τ^-1,maxωq*τ^-1)[1]
-    println("Second integral done")
-    return inta + intb
-end # function ΔEdrudeint1
-
-function ΔEdrudeint1(r, r0, τ)
-    α = 1000 # Lower cutoff for pole handling
-    β = 10000 # Upper cutoff for pole handling
-    maxωq = 1e6 # Confirmed to be enough for (10, 1, 1)
-
+# Integrates the energy shift along ω
+function ΔEdrudeint1(r, r0, τ; α=10, β=10) 
+    # For whatever reason function calls depends in some oscillatory manner on
+    # α, β
 
     χ̃0 = ΔEdrudeχ̃(0, r, r0)
     χ̃τ = ΔEdrudeχ̃(im*τ^-1, r, r0)
-    χ̃0f(y) = y > -α*τ^-1 ? χ̃0 : 0
-    χ̃τf(y) = y < β*τ^-1 ? χ̃τ : 0
 
-    intb = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃τf(y))/(y*(y-τ^-1)), τ^-1/2, τ^-1,maxωq*τ^-1)[1]
-    println("Second integral done")
-    inta = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃0f(y))/(y*(y-τ^-1)), -maxωq*τ^-1, 0, τ^-1/2)[1]
+    min = -α*τ^-1
+    mid = τ^-1/2
+    max = β*τ^-1
+    corr1 = -τ*χ̃0*log(1 + α^-1)/(mid - min)
+    corr2 = τ*χ̃τ*log(1 - β^-1)/(max - mid) 
+
+    intc = quadgk_count(y -> ΔEdrudeχ̃(im*y, r, r0)/(y*(y-τ^-1)), -Inf, min)
+    intd = quadgk_count(y -> ΔEdrudeχ̃(im*y, r, r0)/(y*(y-τ^-1)), max, Inf)
+    inta = quadgk_count(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃0)/(y*(y-τ^-1))
+                                                               + corr1
+                                                               , min, 0, mid)
     println("First integral done")
-    vanish = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃τf(y))/(y*(y-τ^-1)), -1e8, -α*τ^-1)[1]
-    println("Correction: $(χ̃τ*log(1 - β^-1) - χ̃0*log(1 + α^-1))")
-    println("This should be vanishing: $vanish")
-    return inta + intb + χ̃τ*log(1 - β^-1) - χ̃0*log(1 + α^-1)
+    intb = quadgk_count(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃τ)/(y*(y-τ^-1)) + corr2, mid, τ^-1, max)
+    println("Second integral done")
+    println("Correction1 = $(corr1*(mid-min)), correction2 = $(corr2*(max-mid))")
+    return (inta .+ intb .+ intc .+ intd)[1] # Just returns integral value
 end # function ΔEdrudeint1
 
-function ΔEdrudeint(r, r0, τ)
-    maxωq = 1e7
-    maxrq = 1e7
-    inta = hcubature(y, r -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(0, r, r0))/(y*(y-τ^-1)),
-                     (-maxωq*τ^-1, r0), (0, τ^-1/2)[1])
+# Integrates the energy shift along r, ω, at the same time
+function ΔEdrudeint(r, r0, τ; α=100, β=2)
+    # For whatever reason increasing α, β, seems to decrease function calls, up
+    # to some limit
+    maxrq = 2
+    miny = -α*τ^-1
+    midy = τ^-1/2
+    maxy = β*τ^-1
+    inta = hcubature((y, r) -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(0, r, r0))/(y*(y-τ^-1)),
+                     (-α*τ^-1, 0), (r0, maxrq*r0))
     println("First integral done")
-    intb = quadgk(y -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(im*τ^-1, r, r0))/(y*(y-τ^-1)), τ^-1/2, τ^-1,maxωq*τ^-1)[1]
+    intb = hcubature((y, r) -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(0, r, r0))/(y*(y-τ^-1)),
+                     (0, τ^-1/2), (r0, maxrq*r0))
     println("Second integral done")
-    return inta + intb
+    intc = hcubature((y, r) -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(im*τ^-1, r, r0))/(y*(y-τ^-1)), 
+                     (τ^-1/2, τ^-1), (r0, maxrq*r0))
+    println("Third integral done")
+    intd = hcubature((y, r) -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(im*τ^-1, r, r0))/(y*(y-τ^-1)), 
+                     (τ^-1, β*τ^-1), (r0, maxrq*r0))
+    println("Fourth integral done")
+    return inta .+ intb .+ intc .+ intd
 end # function ΔEdrudeint1
 
 # Integrands for ΔEdrudecoef, factor δσ/2 off from paper version
@@ -1151,96 +1157,38 @@ function ΔEdrudeχ̃(ω, r, r0)
 end # function ΔEdrudeχ̃
 
 # Plots integrands for ΔEdrudeint1 as a function of y
-function ΔEdrudeχ̃plot(r, r0, τ; ymin=-5, ystep=0.01, ymax=5)
+function ΔEdrudeχ̃plot(r, r0, τ; ymin=-5, ystep=0.01, ymax=5, α=10, β=10)
     yy = ymin:ystep:ymax
     χ̃0 = ΔEdrudeχ̃(0, r, r0)
     χ̃τ = ΔEdrudeχ̃(im*τ^-1, r, r0)
+    χ̃0f(y) = y > -α*τ^-1 ? χ̃0 : 0
+    χ̃τf(y) = y < β*τ^-1 ? χ̃τ : 0
     integ1 = []
     integ2 = []
 
-    println("χ̃0 = $χ̃0")
-    println("χ̃τ = $χ̃τ")
+    #println("χ̃0 = $χ̃0")
+    #println("χ̃τ = $χ̃τ")
 
     for y in yy
         χ̃ = ΔEdrudeχ̃(im*y, r, r0)
 
-        push!(integ1, (χ̃-χ̃0)/(y*(y-τ^-1)))
-        push!(integ2, (χ̃-χ̃τ)/(y*(y-τ^-1)))
-        println("y = $y done!")
+        push!(integ1, (χ̃-χ̃0f(y))/(y*(y-τ^-1)))
+        push!(integ2, (χ̃-χ̃τf(y))/(y*(y-τ^-1)))
+        #println("y = $y done!")
     end # for
     # Mask low values, for now
-#    ymin = 1e-10
-#    χzθ[abs.(χzθ) .< ymin] .= ymin
-#    χzz[abs.(χzz) .< ymin] .= ymin
+    absmin = 1e-20
+    integ1[abs.(integ1) .< absmin] .= absmin
+    integ2[abs.(integ2) .< absmin] .= absmin
+    integ1[isnan.(integ1)] .= 0
+    integ2[isnan.(integ2)] .= 0
 
-    integralplot = plot(yy, abs.(integ1), 
+    integralplot = plot(yy, integ1, 
                         label="Integrand 1", size=(800, 500), title="Integrands")
-    plot!(yy, abs.(integ2), 
-                  label="Integrand 2", yscale=:log10)
+    plot!(yy, integ2, 
+                  label="Integrand 2")
     #plot!([τ^-1], seriestype=:vline, label="", color=:red, annotations=(τ^-1*1.1, minimum(abs.(integ1)), ("τ^-1'", 6, :bottom, :left, :red)))
 end # function ΔEdrudeχ̃plot
-
-# Integrates the energy shift due to an isotropic Drude ES response with relaxation time
-# τ and base conductivity σ0. 
-# The ES plane is taken to have smallest distance r0 to the wire centre
-# This is according to the ´´old'' formula
-function ΔEdrudeisoold(τ, σ0, r0)
-    # Integrand for real space integration
-    ωint = r -> (im*σ0*tr(localresponse(r, iϵ) - localresponse(r, im*τ^-1)))
-    # Integration over non-z direction
-    ΔE = quadgk(r -> r/√(r^2-r0^2)*ωint(r), r0, Inf)[1]
-
-    return ΔE
-end # function ΔEdrudeiso
-
-# Integrates the A coefficient for ΔE due to the anis. part of an 
-# anisotropic Drude ES response with relaxation time τ and conductivity 
-# anis. δσ.
-# The ES plane is taken to have smallest distance r0 to the wire centre
-# This is according to the ´´old'' formula
-function ΔEdrudecoefold(τ, δσ, r0)
-    # Integration over x direction
-    maxrq = 1e7
-    A = imag(quadgk(r -> -im*δσ/8*ΔEdrudeintold(r, τ, r0), r0, r0*maxrq)[1]) # Currently factor i off
-    return A
-end # function ΔEdrude
-
-# Integrands for ΔEdrudecoef, factor δσ/2 off from paper version
-# This is according to the ´´old'' formula
-function ΔEdrudeintold(r, τ, r0)
-    a = √(r^2-r0^2)
-    χ̃ = localresponse(r, iϵ) - localresponse(r, im*τ^-1)
-    A = a/r*χ̃[1, 1] + r0^2/(r*a)*χ̃[2, 2] - r/a*χ̃[3, 3]
-    return A
-end # function ΔEdrudeint
-
-# Plots (maximum) energy shift dependance due to the anis. part of Drude ES
-# response as a function of relaxation time τ
-# This is according to the ´´old'' formula
-function drudeτplotold(δσ, r0; τmin=0.1, τstep=0.1, τmax=5)
-    ττ = τmin:τstep:τmax
-    EE = []
-    for τ in ττ
-        E = ΔEdrudecoefold(τ, δσ, r0)
-        push!(EE, E)
-        println("τ = $τ has been integrated!")
-    end # for
-    plot(ττ, EE, xlabel="τ", ylabel="Maximal energy shift due to wire direction", title="Energy shift due to local Drude χES, r0=$r0")
-end # function drudeτplot
-
-# Plots (maximum) energy shift dependance due to the anis. part of Drude ES
-# response as a function of wire distance r0
-# This is according to the ´´old'' formula
-function druder0plotold(δσ, τ; r0min=0.1, r0step=0.1, r0max=5)
-    rr = r0min:r0step:r0max
-    EE = []
-    for r0 in rr
-        E = ΔEdrudecoefold(τ, δσ, r0)
-        push!(EE, E)
-        println("r0 = $r0 has been integrated!")
-    end # for
-    plot(rr, EE, xlabel="r0", ylabel="Maximal energy shift due to wire direction", title="Energy shift due to local Drude χES, τ=$τ")
-end # function druder0plot
 
 # Plots Hankel functions for clarity
 function hankelplot(m; step=0.01, xmin=0, xmax=2)

@@ -2,6 +2,7 @@ module MaterialLambShift
 
 #using Bessels #Does not support complex arguments
 using SpecialFunctions
+using JLD
 using Plots
 using LinearAlgebra
 using StaticArrays
@@ -13,6 +14,8 @@ using HCubature
 #                           :c                                 #
 
 # export dlayerresponse
+export savetofile_localresponse
+export savetofile_Edrudeint1
 export dlayerradialresponse
 export dlayerradialdynresponse
 export hankelplot
@@ -22,17 +25,26 @@ export coeftoresponse
 export staticresponse
 export dynamicresponse
 export diffresponse
+export diffresponseunit
 export asymptdynamicresponse
 export kcheck
+export kcheckunit
 export qcheck
 export localresponseωplot
 export localresponseiωplot
+export localresponsewplot
+export localresponseiwplot
 export disccheck
 export localresponse
+export localresponseunit
 export asymptcheck
 export getν
 export ΔEdrudeint1
+export ΔEdrudeint1unit
+export ΔEdrudeintunit
+export ΔEdrudeint2
 export ΔEdrudeχ̃
+export ΔEdrudeintegunitplot
 export ΔEdrudeχ̃plot
 export ΔEdrudeisoold
 export ΔEdrudecoefold
@@ -44,6 +56,19 @@ export mybesselj
 ## Variable setup
 const rw::Float64 = 0.1 # Wire width, ls
 const iϵ::ComplexF64 = 1e-11im # Causality fixer
+
+# Wrapper to run ΔEdrudeint1, saving results to file save_filename
+function savetofile_Edrudeint1(save_filename, r, r0, τ)
+    result = ΔEdrudeint1(r, r0, τ)
+    save(save_filename * ".jld", "result", result)
+end # function wrapper_Edrudeint1
+
+# Wrapper to run localresponse, saving results to file save_filename
+function savetofile_localresponse(save_filename, r, ω)
+    println("Started calculating r=$r, ω$ω, in julia")
+    result = localresponse(r, ω)
+    save(save_filename * ".jld", "result", result)
+end # function wrapper_Edrudeint1
 
 # Returns tuple of Hankel function coordinates (αE, βE, γE, αB, βB, γB)
 # consistent with a fluctuating dipole at distance rd from the axis of
@@ -150,175 +175,209 @@ function dlayerresponse(r, θ, z, ω, m, k)
 end # function dlayerresponse
 
 # Plots dynamic response as a function of r
-function dlayerradialdynresponse(ω, m, k; rd=1, maxr=2, stepr=0.001, minr=0.1)
+function dlayerradialdynresponse(ω, m, k; rd=1, maxrq=2, maxrexp=1, stepr=0.001, minr=0.1)
+    maxr = rw*(1 + maxrq/(abs(m)+1))
     rr = minr:stepr:maxr # Range of r
     xrr, xrθ, xrz, xθr, xθθ, xθz, xzr, xzθ, xzz = [[] for _ in 1:9] # Dynamic solution
     drr, drθ, drz, dθr, dθθ, dθz, dzr, dzθ, dzz = [[] for _ in 1:9] # Difference solution
+    urr, urθ, urz, uθr, uθθ, uθz, uzr, uzθ, uzz = [[] for _ in 1:9] # Unitless difference solution
     arr, arθ, arz, aθr, aθθ, aθz, azr, azθ, azz = [[] for _ in 1:9] # Asympt. solution
     brr, brθ, brz, bθr, bθθ, bθz, bzr, bzθ, bzz = [[] for _ in 1:9] # Asympt. diff. solution
 
-    for r in rr
-        # Dynamic response
-        χ = dynamicresponse(r, rd, ω + iϵ, m, k)
-        push!(xrr, χ[1, 1])
-        push!(xrθ, χ[1, 2])
-        push!(xrz, χ[1, 3])
-        push!(xθr, χ[2, 1])
-        push!(xθθ, χ[2, 2])
-        push!(xθz, χ[2, 3])
-        push!(xzr, χ[3, 1])
-        push!(xzθ, χ[3, 2])
-        push!(xzz, χ[3, 3])
-    end # for
+#    for r in rr
+#        # Dynamic response
+#        χ = dynamicresponse(r, rd, ω + iϵ, m, k)
+#        push!(xrr, χ[1, 1])
+#        push!(xrθ, χ[1, 2])
+#        push!(xrz, χ[1, 3])
+#        push!(xθr, χ[2, 1])
+#        push!(xθθ, χ[2, 2])
+#        push!(xθz, χ[2, 3])
+#        push!(xzr, χ[3, 1])
+#        push!(xzθ, χ[3, 2])
+#        push!(xzz, χ[3, 3])
+#    end # for
+#
+#    for r in rr
+#        # Diff response
+#        χ = diffresponse(r, rd, ω + iϵ, m, k)
+#        push!(drr, χ[1, 1])
+#        push!(drθ, χ[1, 2])
+#        push!(drz, χ[1, 3])
+#        push!(dθr, χ[2, 1])
+#        push!(dθθ, χ[2, 2])
+#        push!(dθz, χ[2, 3])
+#        push!(dzr, χ[3, 1])
+#        push!(dzθ, χ[3, 2])
+#        push!(dzz, χ[3, 3])
+#    end # for
 
     for r in rr
-        # Diff response
-        χ = diffresponse(r, rd, ω + iϵ, m, k)
-        push!(drr, χ[1, 1])
-        push!(drθ, χ[1, 2])
-        push!(drz, χ[1, 3])
-        push!(dθr, χ[2, 1])
-        push!(dθθ, χ[2, 2])
-        push!(dθz, χ[2, 3])
-        push!(dzr, χ[3, 1])
-        push!(dzθ, χ[3, 2])
-        push!(dzz, χ[3, 3])
+        # Diffunit response #NOTE currently evaluates locally in u
+        χ = 1/(16*im*pi^2*rw^3)*diffresponseunit(r/rw, r/rw, ω*rw, m, k*rw)*rw 
+        # Extra factor of rw because of integration measure
+        push!(urr, χ[1, 1])
+        push!(urθ, χ[1, 2])
+        push!(urz, χ[1, 3])
+        push!(uθr, χ[2, 1])
+        push!(uθθ, χ[2, 2])
+        push!(uθz, χ[2, 3])
+        push!(uzr, χ[3, 1])
+        push!(uzθ, χ[3, 2])
+        push!(uzz, χ[3, 3])
     end # for
 
-    for r in rr
-        # Asymptotic response
-        χ = asymptdynamicresponse(r, rd, ω + iϵ, m, k)
-        push!(arr, χ[1, 1])
-        push!(arθ, χ[1, 2])
-        push!(arz, χ[1, 3])
-        push!(aθr, χ[2, 1])
-        push!(aθθ, χ[2, 2])
-        push!(aθz, χ[2, 3])
-        push!(azr, χ[3, 1])
-        push!(azθ, χ[3, 2])
-        push!(azz, χ[3, 3])
-    end # for
-
-    for r in rr
-        # Asymptotic diff. response
-        χ = asymptdiffresponse(r, rd, ω + iϵ, m, k)
-        push!(brr, χ[1, 1])
-        push!(brθ, χ[1, 2])
-        push!(brz, χ[1, 3])
-        push!(bθr, χ[2, 1])
-        push!(bθθ, χ[2, 2])
-        push!(bθz, χ[2, 3])
-        push!(bzr, χ[3, 1])
-        push!(bzθ, χ[3, 2])
-        push!(bzz, χ[3, 3])
-    end # for
+#    for r in rr
+#        # Asymptotic response
+#        χ = asymptdynamicresponse(r, rd, ω + iϵ, m, k)
+#        push!(arr, χ[1, 1])
+#        push!(arθ, χ[1, 2])
+#        push!(arz, χ[1, 3])
+#        push!(aθr, χ[2, 1])
+#        push!(aθθ, χ[2, 2])
+#        push!(aθz, χ[2, 3])
+#        push!(azr, χ[3, 1])
+#        push!(azθ, χ[3, 2])
+#        push!(azz, χ[3, 3])
+#    end # for
+#
+#    for r in rr
+#        # Asymptotic diff. response
+#        χ = asymptdiffresponse(r, rd, ω + iϵ, m, k)
+#        push!(brr, χ[1, 1])
+#        push!(brθ, χ[1, 2])
+#        push!(brz, χ[1, 3])
+#        push!(bθr, χ[2, 1])
+#        push!(bθθ, χ[2, 2])
+#        push!(bθz, χ[2, 3])
+#        push!(bzr, χ[3, 1])
+#        push!(bzθ, χ[3, 2])
+#        push!(bzz, χ[3, 3])
+#    end # for
 
     # Mask low values, for now
     ymin = 1e-8
-    xrr[abs.(xrr) .< ymin] .= ymin
-    xrθ[abs.(xrθ) .< ymin] .= ymin
-    xrz[abs.(xrz) .< ymin] .= ymin
-    xθr[abs.(xθr) .< ymin] .= ymin
-    xθθ[abs.(xθθ) .< ymin] .= ymin
-    xθz[abs.(xθz) .< ymin] .= ymin
-    xzr[abs.(xzr) .< ymin] .= ymin
-    xzθ[abs.(xzθ) .< ymin] .= ymin
-    xzz[abs.(xzz) .< ymin] .= ymin
-    drr[abs.(drr) .< ymin] .= ymin
-    drθ[abs.(drθ) .< ymin] .= ymin
-    drz[abs.(drz) .< ymin] .= ymin
-    dθr[abs.(dθr) .< ymin] .= ymin
-    dθθ[abs.(dθθ) .< ymin] .= ymin
-    dθz[abs.(dθz) .< ymin] .= ymin
-    dzr[abs.(dzr) .< ymin] .= ymin
-    dzθ[abs.(dzθ) .< ymin] .= ymin
-    dzz[abs.(dzz) .< ymin] .= ymin
-    arr[abs.(arr) .< ymin] .= ymin
-    arθ[abs.(arθ) .< ymin] .= ymin
-    arz[abs.(arz) .< ymin] .= ymin
-    aθr[abs.(aθr) .< ymin] .= ymin
-    aθθ[abs.(aθθ) .< ymin] .= ymin
-    aθz[abs.(aθz) .< ymin] .= ymin
-    azr[abs.(azr) .< ymin] .= ymin
-    azθ[abs.(azθ) .< ymin] .= ymin
-    azz[abs.(azz) .< ymin] .= ymin
-    brr[abs.(brr) .< ymin] .= ymin
-    brθ[abs.(brθ) .< ymin] .= ymin
-    brz[abs.(brz) .< ymin] .= ymin
-    bθr[abs.(bθr) .< ymin] .= ymin
-    bθθ[abs.(bθθ) .< ymin] .= ymin
-    bθz[abs.(bθz) .< ymin] .= ymin
-    bzr[abs.(bzr) .< ymin] .= ymin
-    bzθ[abs.(bzθ) .< ymin] .= ymin
-    bzz[abs.(bzz) .< ymin] .= ymin
+#    xrr[abs.(xrr) .< ymin] .= ymin
+#    xrθ[abs.(xrθ) .< ymin] .= ymin
+#    xrz[abs.(xrz) .< ymin] .= ymin
+#    xθr[abs.(xθr) .< ymin] .= ymin
+#    xθθ[abs.(xθθ) .< ymin] .= ymin
+#    xθz[abs.(xθz) .< ymin] .= ymin
+#    xzr[abs.(xzr) .< ymin] .= ymin
+#    xzθ[abs.(xzθ) .< ymin] .= ymin
+#    xzz[abs.(xzz) .< ymin] .= ymin
+#    drr[abs.(drr) .< ymin] .= ymin
+#    drθ[abs.(drθ) .< ymin] .= ymin
+#    drz[abs.(drz) .< ymin] .= ymin
+#    dθr[abs.(dθr) .< ymin] .= ymin
+#    dθθ[abs.(dθθ) .< ymin] .= ymin
+#    dθz[abs.(dθz) .< ymin] .= ymin
+#    dzr[abs.(dzr) .< ymin] .= ymin
+#    dzθ[abs.(dzθ) .< ymin] .= ymin
+#    dzz[abs.(dzz) .< ymin] .= ymin
+    urr[abs.(urr) .< ymin] .= ymin
+    urθ[abs.(urθ) .< ymin] .= ymin
+    urz[abs.(urz) .< ymin] .= ymin
+    uθr[abs.(uθr) .< ymin] .= ymin
+    uθθ[abs.(uθθ) .< ymin] .= ymin
+    uθz[abs.(uθz) .< ymin] .= ymin
+    uzr[abs.(uzr) .< ymin] .= ymin
+    uzθ[abs.(uzθ) .< ymin] .= ymin
+    uzz[abs.(uzz) .< ymin] .= ymin
+#    arr[abs.(arr) .< ymin] .= ymin
+#    arθ[abs.(arθ) .< ymin] .= ymin
+#    arz[abs.(arz) .< ymin] .= ymin
+#    aθr[abs.(aθr) .< ymin] .= ymin
+#    aθθ[abs.(aθθ) .< ymin] .= ymin
+#    aθz[abs.(aθz) .< ymin] .= ymin
+#    azr[abs.(azr) .< ymin] .= ymin
+#    azθ[abs.(azθ) .< ymin] .= ymin
+#    azz[abs.(azz) .< ymin] .= ymin
+#    brr[abs.(brr) .< ymin] .= ymin
+#    brθ[abs.(brθ) .< ymin] .= ymin
+#    brz[abs.(brz) .< ymin] .= ymin
+#    bθr[abs.(bθr) .< ymin] .= ymin
+#    bθθ[abs.(bθθ) .< ymin] .= ymin
+#    bθz[abs.(bθz) .< ymin] .= ymin
+#    bzr[abs.(bzr) .< ymin] .= ymin
+#    bzθ[abs.(bzθ) .< ymin] .= ymin
+#    bzz[abs.(bzz) .< ymin] .= ymin
 
     Errplot = plot()
     #plot!(rr, abs.(xrr), line_z=imag(log.(xrr)), label="χ^{rr}")
     #plot!(rr, abs.(arr), line_z=imag(log.(arr)), label="asympt. χ^{rr}")
     #plot!(rr, abs.(brr), line_z=angle.(brr), label="asympt. diff. χ^{rr}")
-    plot!(rr, abs.(drr), line_z=angle.(drr), label="diff. χ^{rr}", linewidth=0.5)
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(drr)), ("r'", 6, :bottom, :left, :red)))
+    #plot!(rr, abs.(drr), line_z=angle.(drr), label="diff. χ^{rr}", linewidth=0.5)
+    plot!(rr, abs.(urr), line_z=angle.(urr), label="unitless diff. χ^{rr}", linewidth=0.5)
+    #plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(drr)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xrr./arr), color=:purple)
     Erθplot = plot()
     #plot!(rr, abs.(xrθ), line_z=imag(log.(xrθ)), label="χ^{rθ}")
-    plot!(rr, abs.(drθ), line_z=angle.(drθ), label="diff. χ^{rθ}", linewidth=0.5)
+    #plot!(rr, abs.(drθ), line_z=angle.(drθ), label="diff. χ^{rθ}", linewidth=0.5)
+    plot!(rr, abs.(urθ), line_z=angle.(urθ), label="unitless diff. χ^{rθ}", linewidth=0.5)
     #plot!(rr, abs.(arθ), line_z=imag(log.(arθ)), label="asympt. χ^{rθ}")
     #plot!(rr, abs.(brθ), line_z=angle.(brθ), label="asympt. diff. χ^{rθ}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(drθ)), ("r'", 6, :bottom, :left, :red)))
+    #plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(drθ)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xrθ./arθ), color=:purple)
     Erzplot = plot()
     #plot!(rr, abs.(xrz), line_z=imag(log.(xrz)), label="χ^{rz}")
-    plot!(rr, abs.(drz), line_z=angle.(drz), label="diff. χ^{rz}", linewidth=0.5)
+    #plot!(rr, abs.(drz), line_z=angle.(drz), label="diff. χ^{rz}", linewidth=0.5)
+    plot!(rr, abs.(urz), line_z=angle.(urz), label="unitless diff. χ^{rz}", linewidth=0.5)
     #plot!(rr, abs.(arz), line_z=imag(log.(arz)), label="asympt. χ^{rz}")
     #plot!(rr, abs.(brz), line_z=angle.(brz), label="asympt. diff. χ^{rz}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(drz)), ("r'", 6, :bottom, :left, :red)))
+    #plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(drz)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xrz./arz), color=:purple)
     Eθrplot = plot()
     #plot!(rr, abs.(xθr), line_z=imag(log.(xθr)), label="χ^{θr}")
-    plot!(rr, abs.(dθr), line_z=angle.(dθr), label="diff. χ^{θr}", linewidth=0.5)
+    #plot!(rr, abs.(dθr), line_z=angle.(dθr), label="diff. χ^{θr}", linewidth=0.5)
+    plot!(rr, abs.(uθr), line_z=angle.(uθr), label="unitless diff. χ^{θr}", linewidth=0.5)
     #plot!(rr, abs.(aθr), line_z=imag(log.(aθr)), label="asympt. χ^{θr}")
     #plot!(rr, abs.(bθr), line_z=angle.(bθr), label="asympt. diff. χ^{θr}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dθr)), ("r'", 6, :bottom, :left, :red)))
+    #plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dθr)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xθr./aθr), color=:purple)
     Eθθplot = plot()
     #plot!(rr, abs.(xθθ), line_z=imag(log.(xθθ)), label="χ^{θθ}")
-    plot!(rr, abs.(dθθ), line_z=angle.(dθθ), label="diff. χ^{θθ}", linewidth=0.5)
+    #plot!(rr, abs.(dθθ), line_z=angle.(dθθ), label="diff. χ^{θθ}", linewidth=0.5)
+    plot!(rr, abs.(uθθ), line_z=angle.(uθθ), label="unitless diff. χ^{θθ}", linewidth=0.5)
     #plot!(rr, abs.(aθθ), line_z=imag(log.(aθθ)), label="asympt. χ^{θθ}")
     #plot!(rr, abs.(bθθ), line_z=angle.(bθθ), label="asympt. diff. χ^{θθ}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dθθ)), ("r'", 6, :bottom, :left, :red)))
+    #plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dθθ)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xθθ./aθθ), color=:purple)
     Eθzplot = plot()
     #plot!(rr, abs.(xθz), line_z=imag(log.(xθz)), label="χ^{θz}")
-    plot!(rr, abs.(dθz), line_z=angle.(dθz), label="diff. χ^{θz}", linewidth=0.5)
+    #plot!(rr, abs.(dθz), line_z=angle.(dθz), label="diff. χ^{θz}", linewidth=0.5)
+    plot!(rr, abs.(uθz), line_z=angle.(uθz), label="unitless diff. χ^{θz}", linewidth=0.5)
     #plot!(rr, abs.(aθz), line_z=imag(log.(aθz)), label="asympt. χ^{θz}")
     #plot!(rr, abs.(bθz), line_z=angle.(bθz), label="asympt. diff. χ^{θz}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dθz)), ("r'", 6, :bottom, :left, :red)))
+    #plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dθz)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xθz./aθz), color=:purple)
     Ezrplot = plot()
     #plot!(rr, abs.(xzr), line_z=imag(log.(xzr)), label="χ^{zr}")
-    plot!(rr, abs.(dzr), line_z=angle.(dzr), label="diff. χ^{zr}", linewidth=0.5)
+    #plot!(rr, abs.(dzr), line_z=angle.(dzr), label="diff. χ^{zr}", linewidth=0.5)
+    plot!(rr, abs.(uzr), line_z=angle.(uzr), label="unitless diff. χ^{zr}", linewidth=0.5)
     #plot!(rr, abs.(azr), line_z=imag(log.(azr)), label="asympt. χ^{zr}")
     #plot!(rr, abs.(bzr), line_z=angle.(bzr), label="asympt. diff. χ^{zr}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dzr)), ("r'", 6, :bottom, :left, :red)))
+    #plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dzr)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xzr./azr), color=:purple)
     Ezθplot = plot()
     #plot!(rr, abs.(xzθ), line_z=imag(log.(xzθ)), label="χ^{zθ}")
-    plot!(rr, abs.(dzθ), line_z=angle.(dzθ), label="diff. χ^{zθ}", linewidth=0.5)
+    #plot!(rr, abs.(dzθ), line_z=angle.(dzθ), label="diff. χ^{zθ}", linewidth=0.5)
+    plot!(rr, abs.(uzθ), line_z=angle.(uzθ), label="unitless diff. χ^{zθ}", linewidth=0.5)
     #plot!(rr, abs.(azθ), line_z=imag(log.(azθ)), label="asympt. χ^{zθ}")
     #plot!(rr, abs.(bzθ), line_z=angle.(bzθ), label="asympt. diff. χ^{zθ}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dzθ)), ("r'", 6, :bottom, :left, :red)))
+    #plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dzθ)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xzθ./azθ), color=:purple)
     Ezzplot = plot()
     #plot!(rr, abs.(xzz), line_z=imag(log.(xzz)), label="χ^{zz}")
-    plot!(rr, abs.(dzz), line_z=angle.(dzz), label="diff. χ^{zz}", linewidth=0.5)
+    #plot!(rr, abs.(dzz), line_z=angle.(dzz), label="diff. χ^{zz}", linewidth=0.5)
+    plot!(rr, abs.(uzz), line_z=angle.(uzz), label="unitless diff. χ^{zz}", linewidth=0.5)
     #plot!(rr, abs.(azz), line_z=imag(log.(azz)), label="asympt. χ^{zz}")
     #plot!(rr, abs.(bzz), line_z=angle.(bzz), label="asympt. diff. χ^{zz}")
-    plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dzz)), ("r'", 6, :bottom, :left, :red)))
+    #plot!([rd], seriestype=:vline, label="", color=:red, annotations=(rd*1.1, minimum(abs.(dzz)), ("r'", 6, :bottom, :left, :red)))
     #plot!(rr, abs.(xzz./azz), color=:purple)
     plot(Errplot, Erθplot, Erzplot, Eθrplot, Eθθplot, Eθzplot, Ezrplot, Ezθplot, Ezzplot, 
          layout=(3,3), yscale=:log10, plot_title="ω = $ω, m = $m, k = $k", 
          legend_position=:bottomright, legend_font_pointsize=3, size=(800, 500), clims=(0, pi))
-
 end # function dlayerradialdynresponse
 # Plots response as a function of r, currently compares dynamic and LSE
 # solution
@@ -508,6 +567,57 @@ function dynamicresponse(r, r′, ω, m, k; verbatim=false)
     end
 end # function dynamicresponse
 
+# Returns difference of dynamic wire and free response (Er, Eθ, Ez)^t * (dr,
+# dθ, dz) at distance u, u′, for w, m, p. Takes unitless arguments w, u, u', p
+# Adds causality fix iη by itself
+# Contains no common prefactor to the matrix, this has to be added
+# at a later stage
+function diffresponseunit(u, u′, w, m, p; diagonal=false)
+    # kcfac = 1e2 #factor to determine kc
+    w = w + iϵ
+    ν = getν(w, p)
+
+    J = mybesselj(m, ν)
+    Y = mybessely(m, ν)
+    J′ = 1/2*(mybesselj(m-1, ν) - mybesselj(m+1, ν))
+    Y′ = 1/2*(mybessely(m-1, ν) - mybessely(m+1, ν))
+    Qpref = J/(J + im*Y)
+    QBpref = J′/(J′ + im*Y′)
+
+    #println("Qpref=$Qpref")
+    #println("QBpref=$QBpref")
+    
+    if isnan(Qpref)
+        Qpref = 0
+    end # if
+    if isnan(QBpref)
+        QBpref = 0
+    end # if
+    Hu = hankelh1(m, ν*u) #
+    Hu′ = hankelh1(m, ν*u′)
+    H′u = 1/2*(hankelh1(m-1, ν*u) - hankelh1(m+1, ν*u))
+    H′u′ = 1/2*(hankelh1(m-1, ν*u′) - hankelh1(m+1, ν*u′))
+#    println("Hu = $Hu")
+#    println("Hu′ = $Hu′")
+#    println("H′u = $H′u")
+#    println("H′u′ = $H′u′")
+    if !diagonal
+        χ = SMatrix{3, 3}(   Qpref*[im*p*H′u; -p*m/(u*ν)*Hu; ν*Hu] *
+                             [-im*p*H′u′;; -p*m/(ν*u′)*Hu′;; ν*Hu′]
+                            + w^2*QBpref*[-im*m/(u*ν)*Hu; H′u; 0] *
+                             [im*m/(u′*ν)*Hu′;; H′u′;; 0])
+    else # Avoids integrating unnecessary elements for localresponse
+        χ = SMatrix{3, 3}(Qpref*diagm([p^2*H′u*H′u′, p^2*m^2/(ν^2*u*u′)*Hu*Hu′,
+                                 ν^2*Hu*Hu′]) +
+                          w^2*QBpref*diagm([m^2/(u*u′*ν^2)*Hu*Hu′, H′u*H′u′, 0])
+                         )
+    end
+#    if any(isnan.(χ))
+#        println("NaN returned from diffresponseunit at u=$u, u′=$u′, w=$w, m=$m, p=$p")
+#    end
+    return χ
+end # function diffresponseunit
+
 # Returns difference of dynamic wire and free response (Er, Eθ, Ez)^t * (dr, dθ, dz) at distance r,
 # r′ for ω, m, k
 # Has to be called with causality fix +iϵ to ω
@@ -528,6 +638,8 @@ function diffresponse(r, r′, ω, m, k; verbatim=false, diagonal=false)
     Y′w = 1/2*(mybessely(m-1, ν*rw) - mybessely(m+1, ν*rw))
     Qpref = -2*Jw/(Jw + im*Yw)
     QBpref = -2*J′w/(J′w + im*Y′w)
+    #println("Qpref=$Qpref")
+    #println("QBpref=$QBpref")
     
     # I suspect that the nan-check is no longer needed anymore, couldn't find
     # the right parameters to test it though
@@ -541,6 +653,10 @@ function diffresponse(r, r′, ω, m, k; verbatim=false, diagonal=false)
     H1′ = hankelh1(m, ν*r′)
     H′1 = 1/2*(hankelh1(m-1, ν*r) - hankelh1(m+1, ν*r)) #
     H′1′ = 1/2*(hankelh1(m-1, ν*r′) - hankelh1(m+1, ν*r′))  #
+#    println("H1 = $H1")
+#    println("H1′ = $H1′")
+#    println("H′1 = $H′1")
+#    println("H′1′ = $H′1′")
 #    if verbatim
 #        println("ν = $ν")
 #        println("H1w = $H1w")
@@ -618,11 +734,12 @@ function diffresponse(r, r′, ω, m, k; verbatim=false, diagonal=false)
     # ω such that response limits to zero.
     #χ[isnan.(χ)] .= 0
     # Set real response to real as soon as possible
-    if real(ω) == 0
-        return real.(χ)
-    else 
-        return χ
-    end # if
+#    if real(ω) == 0
+#        return real.(χ)
+#    else 
+#        return χ
+#    end # if
+    return χ
 end # function dynamicresponse
 # Returns low-ν asymptote for the diff. response
 function asymptdiffresponse(r, r′, ω, m, k)
@@ -708,6 +825,109 @@ function localresponseωplot(r; ωmin=-20, ωstep=0.1, ωmax=20)
                   label="χzz")
     plot(χrrplot, χrθplot, χrzplot, χθrplot, χθθplot, χθzplot, χzrplot, χzθplot, χzzplot, layout=(3,3), title="Local response", yscale=:log10, size=(800, 500), clims=(0, pi))
 end # function localresponseωplot
+
+# Plots the local renormalized unitless response vs w for a given u
+function localresponsewplot(u; wmin=-20, wstep=0.1, wmax=20)
+    ww = wmin:wstep:wmax
+    χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
+    for w in ww
+
+        χ = localresponseunit(u, w)
+        push!(χrr, χ[1, 1])
+        push!(χθr, χ[2, 1])
+        push!(χzr, χ[3, 1])
+        push!(χrθ, χ[1, 2])
+        push!(χθθ, χ[2, 2])
+        push!(χzθ, χ[3, 2])
+        push!(χrz, χ[1, 3])
+        push!(χθz, χ[2, 3])
+        push!(χzz, χ[3, 3])
+        println("w = $w has been integrated")
+    end # for
+    # Mask low values, for now
+    ymin = 1e-10
+    χrr[abs.(χrr) .< ymin] .= ymin
+    χrθ[abs.(χrθ) .< ymin] .= ymin
+    χrz[abs.(χrz) .< ymin] .= ymin
+    χθr[abs.(χθr) .< ymin] .= ymin
+    χθθ[abs.(χθθ) .< ymin] .= ymin
+    χθz[abs.(χθz) .< ymin] .= ymin
+    χzr[abs.(χzr) .< ymin] .= ymin
+    χzθ[abs.(χzθ) .< ymin] .= ymin
+    χzz[abs.(χzz) .< ymin] .= ymin
+    χrrplot = plot(ww, abs.(χrr), line_z=angle.(χrr), 
+                  label="χrr")
+    χθrplot = plot(ww, abs.(χθr), line_z=angle.(χθr), 
+                  label="χθr")
+    χzrplot = plot(ww, abs.(χzr), line_z=angle.(χzr), 
+                  label="χzr")
+    χrθplot = plot(ww, abs.(χrθ), line_z=angle.(χrθ), 
+                  label="χrθ")
+    χθθplot = plot(ww, abs.(χθθ), line_z=angle.(χθθ), 
+                  label="χθθ")
+    χzθplot = plot(ww, abs.(χzθ), line_z=angle.(χzθ), 
+                  label="χzθ")
+    χrzplot = plot(ww, abs.(χrz), line_z=angle.(χrz), 
+                  label="χrz")
+    χθzplot = plot(ww, abs.(χθz), line_z=angle.(χθz), 
+                  label="χθz")
+    χzzplot = plot(ww, abs.(χzz), line_z=angle.(χzz), 
+                  label="χzz")
+    plot(χrrplot, χrθplot, χrzplot, χθrplot, χθθplot, χθzplot, χzrplot, χzθplot, χzzplot, layout=(3,3), title="Local response", yscale=:log10, size=(800, 500), clims=(0, pi))
+end # function localresponsewplot
+
+# Plots the local renormalized unitless response vs imaginary w for a given u
+function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11)
+    ww = im*(wmin:wstep:wmax)
+    χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
+    for w in ww
+
+        χ = localresponseunit(u, w)
+        push!(χrr, χ[1, 1])
+        push!(χθr, χ[2, 1])
+        push!(χzr, χ[3, 1])
+        push!(χrθ, χ[1, 2])
+        push!(χθθ, χ[2, 2])
+        push!(χzθ, χ[3, 2])
+        push!(χrz, χ[1, 3])
+        push!(χθz, χ[2, 3])
+        push!(χzz, χ[3, 3])
+        println("w = $w has been integrated")
+    end # for
+    # Mask low values, for now
+    ymin = 1e-10
+    χrr[abs.(χrr) .< ymin] .= ymin
+    χrθ[abs.(χrθ) .< ymin] .= ymin
+    χrz[abs.(χrz) .< ymin] .= ymin
+    χθr[abs.(χθr) .< ymin] .= ymin
+    χθθ[abs.(χθθ) .< ymin] .= ymin
+    χθz[abs.(χθz) .< ymin] .= ymin
+    χzr[abs.(χzr) .< ymin] .= ymin
+    χzθ[abs.(χzθ) .< ymin] .= ymin
+    χzz[abs.(χzz) .< ymin] .= ymin
+    ww = abs.(ww) # Fixes axis for plotting
+
+    χrrplot = plot(ww, abs.(χrr), line_z=angle.(χrr), 
+                  label="χrr")
+    #plot!(ww, drude, label="Drude form")
+    χθrplot = plot(ww, abs.(χθr), line_z=angle.(χθr), 
+                  label="χθr")
+    χzrplot = plot(ww, abs.(χzr), line_z=angle.(χzr), 
+                  label="χzr")
+    χrθplot = plot(ww, abs.(χrθ), line_z=angle.(χrθ), 
+                  label="χrθ")
+    χθθplot = plot(ww, abs.(χθθ), line_z=angle.(χθθ), 
+                  label="χθθ")
+    χzθplot = plot(ww, abs.(χzθ), line_z=angle.(χzθ), 
+                  label="χzθ")
+    χrzplot = plot(ww, abs.(χrz), line_z=angle.(χrz), 
+                  label="χrz")
+    χθzplot = plot(ww, abs.(χθz), line_z=angle.(χθz), 
+                  label="χθz")
+    χzzplot = plot(ww, abs.(χzz), line_z=angle.(χzz), 
+                  label="χzz")
+    plot(χrrplot, χrθplot, χrzplot, χθrplot, χθθplot, χθzplot, χzrplot, χzθplot, χzzplot, layout=(3,3), title="Local response", yscale=:log10, xlabel="Im(w)", size=(800, 500), clims=(0,pi))
+end # function localresponseiwplot
 
 # Plots the local renormalized response vs imaginary ω for a given r
 # Also plots a Drude functional form 1/iω * 1/(iω-τ-1)
@@ -819,7 +1039,7 @@ function drudeint1plot(r, r0; ymin=0, ystep=0.1, ymax=20, τ=1)
 end # function localresponseωplot
 
 # Plots the dynamic, static and LSE response vs k for a given r
-function kcheck(r, ω, m; kmin=0.0001, kstep=0.001, kmax=1, rd=1)
+function kcheck(r, r′, ω, m; kmin=0.0001, kstep=0.001, kmax=4, rd=1)
     kk = kmin:kstep:kmax
     #χsrr, χsθr, χszr, χsrθ, χsθθ, χszθ, χsrz, χsθz, χszz = [[] for _ in 1:9]
     χxrr, χxθr, χxzr, χxrθ, χxθθ, χxzθ, χxrz, χxθz, χxzz = [[] for _ in 1:9] # Dynamic
@@ -876,7 +1096,7 @@ function kcheck(r, ω, m; kmin=0.0001, kstep=0.001, kmax=1, rd=1)
 #        push!(χxθz, χx[2, 3])
 #        push!(χxzz, χx[3, 3])
 
-        χd = diffresponse(r, rd, ω + iϵ, m, k)
+        χd = diffresponse(r, r′, ω + iϵ, m, k)
         push!(χdrr, χd[1, 1])
         push!(χdθr, χd[2, 1])
         push!(χdzr, χd[3, 1])
@@ -963,7 +1183,7 @@ function kcheck(r, ω, m; kmin=0.0001, kstep=0.001, kmax=1, rd=1)
                   label="χdθz")
     χdzzplot = plot(kk, abs.(χdzz), line_z=imag(log.(χdzz)), 
                   label="χdzz")
-    plot(χdrrplot, χdrθplot, χdrzplot, χdθrplot, χdθθplot, χdθzplot, χdzrplot, χdzθplot, χdzzplot, layout=(3,3), title="Diff.", yscale=:log10)
+    plot(χdrrplot, χdrθplot, χdrzplot, χdθrplot, χdθθplot, χdθzplot, χdzrplot, χdzθplot, χdzzplot, layout=(3,3), title="Diff.", yscale=:log10, clims=(0,pi))
 #    Errplot = plot(kk, abs.(Err), #line_z=imag(log.(Err)), 
 #                  label="Err")
 #    Eθrplot = plot(kk, abs.(Eθr), #line_z=imag(log.(Eθr)), 
@@ -1003,6 +1223,54 @@ function kcheck(r, ω, m; kmin=0.0001, kstep=0.001, kmax=1, rd=1)
 #                  label="Bzz")
     #plot(Brrplot, Brθplot, Brzplot, Bθrplot, Bθθplot, Bθzplot, Bzrplot, Bzθplot, Bzzplot, layout=(3,3), title="LSE B")
 end # function kcheck
+
+# Plots the unitless diff. response vs p for a given u, w
+function kcheckunit(u, u′, w, m; pmin=0.0001, pstep=0.001, pmax=0.4)
+    pp = pmin:pstep:pmax
+    χdrr, χdθr, χdzr, χdrθ, χdθθ, χdzθ, χdrz, χdθz, χdzz = [[] for _ in 1:9] # Diff.
+    for p in pp
+        χd = diffresponseunit(u, u′, w, m, p)
+        push!(χdrr, χd[1, 1])
+        push!(χdθr, χd[2, 1])
+        push!(χdzr, χd[3, 1])
+        push!(χdrθ, χd[1, 2])
+        push!(χdθθ, χd[2, 2])
+        push!(χdzθ, χd[3, 2])
+        push!(χdrz, χd[1, 3])
+        push!(χdθz, χd[2, 3])
+        push!(χdzz, χd[3, 3])
+    end # for
+    # Mask low values, for now
+    ymin = 1e-20
+    χdrr[abs.(χdrr) .< ymin] .= ymin
+    χdrθ[abs.(χdrθ) .< ymin] .= ymin
+    χdrz[abs.(χdrz) .< ymin] .= ymin
+    χdθr[abs.(χdθr) .< ymin] .= ymin
+    χdθθ[abs.(χdθθ) .< ymin] .= ymin
+    χdθz[abs.(χdθz) .< ymin] .= ymin
+    χdzr[abs.(χdzr) .< ymin] .= ymin
+    χdzθ[abs.(χdzθ) .< ymin] .= ymin
+    χdzz[abs.(χdzz) .< ymin] .= ymin
+    χdrrplot = plot(pp, abs.(χdrr), line_z=angle.(χdrr), 
+                  label="χdrr")
+    χdθrplot = plot(pp, abs.(χdθr), line_z=angle.(χdθr), 
+                  label="χdθr")
+    χdzrplot = plot(pp, abs.(χdzr), line_z=angle.(χdzr), 
+                  label="χdzr")
+    χdrθplot = plot(pp, abs.(χdrθ), line_z=angle.(χdrθ), 
+                  label="χdrθ")
+    χdθθplot = plot(pp, abs.(χdθθ), line_z=angle.(χdθθ), 
+                  label="χdθθ")
+    χdzθplot = plot(pp, abs.(χdzθ), line_z=angle.(χdzθ), 
+                  label="χdzθ")
+    χdrzplot = plot(pp, abs.(χdrz), line_z=angle.(χdrz), 
+                  label="χdrz")
+    χdθzplot = plot(pp, abs.(χdθz), line_z=angle.(χdθz), 
+                  label="χdθz")
+    χdzzplot = plot(pp, abs.(χdzz), line_z=angle.(χdzz), 
+                  label="χdzz")
+    plot(χdrrplot, χdrθplot, χdrzplot, χdθrplot, χdθθplot, χdθzplot, χdzrplot, χdzθplot, χdzzplot, layout=(3,3), title="Diff.", yscale=:log10, clims=(0,pi))
+end # function kcheckunit
 
 # Prints the discontinuities over rd and similar checks for the static and LSE
 # solution
@@ -1049,13 +1317,16 @@ function disccheck(ω, m, k; rd=1, ϵ=0.00001)
 
 end # function disccheck
 
-# Returns local response diff at position r
-function localresponse(r, ω)
-    maxk = 3*abs(ω) # This could maybe be refined for ω imaginary
-    if real(ω) == 0
-        maxk = 100*r^-1
+# Returns unitless local response diff at position u
+# Currently these make crazy amounts of calls, order 12k, also below for the
+# non-unit version, PS this is only true for real w,
+# imag w give much fewer calls!
+function localresponseunit(u, w; rtol=1e-2)
+    maxp = 3*abs(w) # This could maybe be refined for ω imaginary
+    if real(w) == 0
+        maxp = 10*u^-1
     end # if
-    #println(maxk)
+    counter = 0
     mcutq::Float64 = 1e-6
     mcuta::Float64 = 1e-50 # Absolute value m-cutoff to prevent runaway loop
     χ = @SMatrix zeros(Complex, 3, 3)
@@ -1063,7 +1334,42 @@ function localresponse(r, ω)
     m::Int64 = 0
     while true
         #println("m = $m")
-        χm = (quadgk((k -> diffresponse(r, r, ω + iϵ, m, k, diagonal=true)), -maxk, maxk)::Tuple{SMatrix{3, 3}, Float64})[1]
+        χm, error, count = (quadgk_count((p -> diffresponseunit(u, u, w, m, p, diagonal=true)), -maxp, maxp, rtol=rtol))
+        # The above quadgk is type unstable, limiting performance
+
+        χ::SMatrix{3, 3, Complex, 9} = χ + 2 *χm
+        if m == 0
+            χ = χ ./ 2
+        end # if
+        #println(χm)
+        counter += count
+        χmnorm::Float64 = norm(χm)
+        if χmnorm/norm(χ) < mcutq || χmnorm < mcuta
+            #println("Broke sum over m at m = $m")
+            break
+        end # if
+        m += 1
+    end # for
+    println("Took $counter calls, up to m = $m")
+    return χ
+end # function localresponse
+
+# Returns local response diff at position r
+function localresponse(r, ω)
+    maxk = 3*abs(ω) # This could maybe be refined for ω imaginary
+    if real(ω) == 0
+        maxk = 100*r^-1
+    end # if
+    #println(maxk)
+    counter = 0
+    mcutq::Float64 = 1e-6
+    mcuta::Float64 = 1e-50 # Absolute value m-cutoff to prevent runaway loop
+    χ = @SMatrix zeros(Complex, 3, 3)
+    χm = @SMatrix zeros(Complex, 3, 3)
+    m::Int64 = 0
+    while true
+        #println("m = $m")
+        χm, error, count = (quadgk_count((k -> diffresponse(r, r, ω + iϵ, m, k, diagonal=true)), -maxk, maxk))
         # The above quadgk is type unstable, limiting performance
 
         χ::SMatrix{3, 3, Complex, 9} = χ + 2 *χm
@@ -1072,12 +1378,14 @@ function localresponse(r, ω)
         end # if
         #println(χm)
         χmnorm::Float64 = norm(χm)
+        counter += count
         if χmnorm/norm(χ) < mcutq || χmnorm < mcuta
             #println("Broke sum over m at m = $m")
             break
         end # if
         m += 1
     end # for
+    #println("Took $counter calls, up to m = $m")
     return χ
 end # function localresponse
 
@@ -1093,14 +1401,14 @@ function ΔEdrudecoef(τ, δσ, r0)
 end # function ΔEdrude
 
 # Integrates the energy shift along r, after doing ω
-function ΔEdrudeint2(r, τ, r0)
+function ΔEdrudeint2(τ, r0; rtol=1e-2)
     maxrq = 2
-    intfull = quadgk(r -> ΔEdrudeint1(r, τ, r0), r0, maxrq*r0)
+    intfull = quadgk(r -> ΔEdrudeint1(r, τ, r0), r0, maxrq*r0, rtol=rtol)
     return intfull
 end # function ΔEdrudeint1
 
 # Integrates the energy shift along ω
-function ΔEdrudeint1(r, r0, τ; α=10, β=10) 
+function ΔEdrudeint1(r, r0, τ; α=100, β=20, rtol=1e-2) 
     # For whatever reason function calls depends in some oscillatory manner on
     # α, β
 
@@ -1113,26 +1421,171 @@ function ΔEdrudeint1(r, r0, τ; α=10, β=10)
     corr1 = -τ*χ̃0*log(1 + α^-1)/(mid - min)
     corr2 = τ*χ̃τ*log(1 - β^-1)/(max - mid) 
 
-    intc = quadgk_count(y -> ΔEdrudeχ̃(im*y, r, r0)/(y*(y-τ^-1)), -Inf, min)
-    intd = quadgk_count(y -> ΔEdrudeχ̃(im*y, r, r0)/(y*(y-τ^-1)), max, Inf)
+    # Cut out tail integrals for now
+    #intc = quadgk_count(y -> ΔEdrudeχ̃(im*y, r, r0)/(y*(y-τ^-1)), -Inf, min, rtol=rtol)
+    #intd = quadgk_count(y -> ΔEdrudeχ̃(im*y, r, r0)/(y*(y-τ^-1)), max, Inf, rtol=rtol)
     inta = quadgk_count(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃0)/(y*(y-τ^-1))
                                                                + corr1
-                                                               , min, 0, mid)
-    println("First integral done")
-    intb = quadgk_count(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃τ)/(y*(y-τ^-1)) + corr2, mid, τ^-1, max)
-    println("Second integral done")
-    println("Correction1 = $(corr1*(mid-min)), correction2 = $(corr2*(max-mid))")
+                                                               , min, 0, mid, rtol=rtol)
+    # println("First integral done")
+    intb = quadgk_count(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃τ)/(y*(y-τ^-1)) + corr2, mid, τ^-1, max, rtol=rtol)
+    # println("Second integral done")
+    # println("Correction1 = $(corr1*(mid-min)), correction2 = $(corr2*(max-mid))")
+    return (inta .+ intb)[1] # Just returns integral value
+end # function ΔEdrudeint1
+
+# Integrates the energy shift along w, for unitless integrands
+function ΔEdrudeint1unit(u, rα, τα; α=100, β=20, rtol=1e-2) 
+    # For whatever reason function calls depends in some oscillatory manner on
+    # α, β
+
+    χ̃0 = ΔEdrudeχ̃unit(0, u, rα)
+    χ̃τ = ΔEdrudeχ̃unit(im*τα^-1, u, rα)
+
+    min = -α*τα^-1
+    mid = τα^-1/2
+    max = β*τα^-1
+    corr1 = -τα*χ̃0*log(1 + α^-1)/(mid - min)
+    corr2 = τα*χ̃τ*log(1 - β^-1)/(max - mid) 
+
+    intc = quadgk_count(y -> -im*ΔEdrudeχ̃(im*y, u, rα)/(y*(y-τα^-1)), -Inf, min, rtol=rtol)
+    intd = quadgk_count(y -> -im*ΔEdrudeχ̃(im*y, u, rα)/(y*(y-τα^-1)), max, Inf, rtol=rtol)
+    inta = quadgk_count(y -> -im*(ΔEdrudeχ̃(im*y, u, rα) - χ̃0)/(y*(y-τα^-1))
+                                                               + corr1
+                                                               , min, 0, mid, rtol=rtol)
+    # println("First integral done")
+    intb = quadgk_count(y -> -im*(ΔEdrudeχ̃(im*y, u, rα) - χ̃τ)/(y*(y-τα^-1)) + corr2, mid, τα^-1, max, rtol=rtol)
+    # println("Second integral done")
+    # println("Correction1 = $(corr1*(mid-min)), correction2 = $(corr2*(max-mid))")
     return (inta .+ intb .+ intc .+ intd)[1] # Just returns integral value
 end # function ΔEdrudeint1
 
+# Integrates the unitless energy shift along w, u, p, m, at the same time
+function ΔEdrudeintunit(rα, τα; rtol=1e-3, maxuq=20.7, maxpq=12, maxyq=2.01, initdiv=1, pmscale=3)
+    maxy = maxyq*τα^-1 + τα^-1/2
+    miny = -maxyq*τα^-1 + τα^-1/2
+    midy = τα^-1/2
+
+    maxu = rα*(1 + maxuq)
+
+    counter = 0
+
+    atol = 0 # Current atol owing to previous integration
+    inttota = 0 # Total result for lower y-half
+    inttotb = 0 # Total result for upper y-half
+
+    m = 0
+    mint = NaN # Total contribution from last m
+    while !(abs(mint) < atol/10)
+        # The integrand, it appears parameters are evaluated at fcn call
+        maxp = maxpq/rα*(abs(m)/pmscale + 1)
+        function intega((y, u, p))
+            integ = imag((([1;; 1;; -1]*diffresponseunit(u, u, im*y, m, p, diagonal=true) *
+             [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] -
+             [1;; 1;; -1]*diffresponseunit(u, u, 0, m, p, diagonal=true) *
+             [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)])/
+                          (y*(y-τα^-1)))[1])
+            if isnan(integ)
+                println("NaN found for intega at y=$y, u=$u, p=$p")
+            end
+            counter += 1
+            return integ
+        end # function intega
+        inta = hcubature(intega, (miny, rα+1e-12, -maxp), (midy, maxu, maxp), rtol=rtol, atol=atol)
+        println("First integral for m=$m done")
+        atol += rtol*abs(inta[1])
+    
+        function integb((y, u, p))
+            integ = imag((([1;; 1;; -1]*diffresponseunit(u, u, im*y, m, p, diagonal=true) *
+                                  [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] -
+                                [1;; 1;; -1]*diffresponseunit(u, u, im*τα^-1, m, p, diagonal=true) *
+                                  [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)])/
+                          (y*(y-τα^-1)))[1])
+            if isnan(integ)
+                println("NaN found for integb at y=$y, u=$u, p=$p")
+            end
+            counter += 1
+            return integ
+        end # function integb
+        intb = hcubature(integb, (midy, rα+1e-12, -maxp), (maxy, maxu, maxp), rtol=rtol, atol=atol)
+        println("Second integral for m=$m done")
+        atol += rtol*abs(intb[1])
+
+        mint = inta[1] + intb[1]
+        inttota += inta[1]
+        inttotb += intb[1]
+
+        println("The result from m=$m is inta=$(inta[1]), intb=$(intb[1])")
+        println("The current absolute tolerance is $atol")
+        m += 1
+    end
+    return (inttota, inttotb, counter)
+end # function ΔEdrudeint1
+
+# Plots heatmap of abs of integrands to ΔEdrudeintunit
+function ΔEdrudeintegunitplot(rα, τα, m; ymaxq=2, pmaxq=4, ystepq=0.13, pstepq=1, umaxq=20, rtol=1e-2, pmscale=3)
+    ymax = ymaxq*τα^-1
+    ystep = ystepq*τα^-1
+    yy = -ymax:ystep:ymax
+    yya = yy[yy .<= τα^-1/2]
+    yyb = yy[yy .> τα^-1/2]
+    pmax = pmaxq*rα^-1*(abs(m/pmscale)+1)
+    pstep = pstepq*rα^-1*(abs(m/pmscale)+1)
+    pp = -pmax:pstep:pmax
+    ygrida = ones(length(pp)) *yya'
+    ygridb = ones(length(pp)) *yyb'
+    pgrida = pp * ones(length(yya))'
+    pgridb = pp * ones(length(yyb))'
+    #umaxa = rα*(ones(length(pp), length(yya)) .+ abs.(umaxq.*ygrida.^-1 .*pgrida.^-1))
+    umaxa = rα.*(1 + umaxq/m).*ones(length(pp), length(yya))
+    #umaxb = rα*(ones(length(pp), length(yyb)) .+ abs.(umaxq.*ygridb.^-1 .*pgridb.^-1))
+    umaxb = rα.*(1 + umaxq/m).*ones(length(pp), length(yyb))
+    function intega(y, u, p)
+        #println("y=$y, u=$u, p=$p")
+        integ = imag((([1;; 1;; -1]*diffresponseunit(u, u, im*y, m, p, diagonal=true) *
+         [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] 
+          - [1;; 1;; -1]*diffresponseunit(u, u, 0, m, p, diagonal=true) *
+         [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)]
+         )/(y*(y-τα^-1)))[1])
+        if isnan(integ)
+            println("NaN found for intega at y=$y, u=$u, p=$p")
+        end
+        return integ
+    end # function intega
+
+    function integb(y, u, p)
+        integ = imag((([1;; 1;; -1]*diffresponseunit(u, u, im*y, m, p, diagonal=true) *
+                              [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] 
+                              - [1;; 1;; -1]*diffresponseunit(u, u, im*τα^-1, m, p, diagonal=true
+                              ) * [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)]
+                             )/
+                      (y*(y-τα^-1)))[1])
+        if isnan(integ)
+            println("NaN found for integb at y=$y, u=$u, p=$p")
+        end
+        return integ
+    end # function integb
+
+    resgrida = quadgk.([u -> intega(y, u, p) for (y, p) in zip(ygrida, pgrida)],
+                        rα, umaxa, rtol=rtol)
+    resgridb = quadgk.([u -> integb(y, u, p) for (y, p) in zip(ygridb, pgridb)],
+                        rα, umaxb, rtol=rtol)
+    # Fix for quadgk putting a tuple in the innermost dimension
+    resgrida = [item[1] for item in resgrida]
+    resgridb = [item[1] for item in resgridb]
+    resgrid = [resgrida;; resgridb]
+    plot(yy, pp, resgrid, seriestype=:heatmap, xlabel="y", ylabel="p")
+end # function Δdrudeintegunitplot
+
 # Integrates the energy shift along r, ω, at the same time
-function ΔEdrudeint(r, r0, τ; α=100, β=2)
+function ΔEdrudeint(r, r0, τ; α=20, β=20)
     # For whatever reason increasing α, β, seems to decrease function calls, up
     # to some limit
     maxrq = 2
     miny = -α*τ^-1
     midy = τ^-1/2
     maxy = β*τ^-1
+    #ERROR in integration bounds
     inta = hcubature((y, r) -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(0, r, r0))/(y*(y-τ^-1)),
                      (-α*τ^-1, 0), (r0, maxrq*r0))
     println("First integral done")
@@ -1152,17 +1605,23 @@ end # function ΔEdrudeint1
 function ΔEdrudeχ̃(ω, r, r0)
     a = √(r^2-r0^2)
     χ = localresponse(r, ω)
-    χ̃ = a/r*χ[1, 1] + r0/(a*r)*χ[2, 2] - r/a*χ[3, 3]
+    χ̃ = a/r*χ[1, 1] + r0^2/(a*r)*χ[2, 2] - r/a*χ[3, 3]
     return χ̃
 end # function ΔEdrudeχ̃
 
-# Plots integrands for ΔEdrudeint1 as a function of y
-function ΔEdrudeχ̃plot(r, r0, τ; ymin=-5, ystep=0.01, ymax=5, α=10, β=10)
+# Integrands for ΔEdrudecoef, unitless version
+function ΔEdrudeχ̃unit(w, u, rα)
+    a = √(u^2-rα^2)
+    χ = localresponseunit(u, w)
+    χ̃ = a/u*χ[1, 1] + rα^2/(a*u)*χ[2, 2] - u/a*χ[3, 3]
+    return χ̃
+end # function ΔEdrudeχ̃unit
+
+# Plots integrands for ΔEdrudeint1unit as a function of y
+function ΔEdrudeχ̃plot(u, r0, τα; ymin=-5, ystep=0.01, ymax=5, α=10, β=10)
     yy = ymin:ystep:ymax
-    χ̃0 = ΔEdrudeχ̃(0, r, r0)
-    χ̃τ = ΔEdrudeχ̃(im*τ^-1, r, r0)
-    χ̃0f(y) = y > -α*τ^-1 ? χ̃0 : 0
-    χ̃τf(y) = y < β*τ^-1 ? χ̃τ : 0
+    χ̃0 = ΔEdrudeχ̃unit(0, u, r0)
+    χ̃τ = ΔEdrudeχ̃unit(im*τα^-1, u, r0)
     integ1 = []
     integ2 = []
 
@@ -1170,11 +1629,11 @@ function ΔEdrudeχ̃plot(r, r0, τ; ymin=-5, ystep=0.01, ymax=5, α=10, β=10)
     #println("χ̃τ = $χ̃τ")
 
     for y in yy
-        χ̃ = ΔEdrudeχ̃(im*y, r, r0)
+        χ̃ = ΔEdrudeχ̃unit(im*y, u, r0)
 
-        push!(integ1, (χ̃-χ̃0f(y))/(y*(y-τ^-1)))
-        push!(integ2, (χ̃-χ̃τf(y))/(y*(y-τ^-1)))
-        #println("y = $y done!")
+        push!(integ1, (χ̃-χ̃0f)/(y*(y-τ^-1)))
+        push!(integ2, (χ̃-χ̃τf)/(y*(y-τ^-1)))
+        println("y = $y done!")
     end # for
     # Mask low values, for now
     absmin = 1e-20
@@ -1184,9 +1643,9 @@ function ΔEdrudeχ̃plot(r, r0, τ; ymin=-5, ystep=0.01, ymax=5, α=10, β=10)
     integ2[isnan.(integ2)] .= 0
 
     integralplot = plot(yy, integ1, 
-                        label="Integrand 1", size=(800, 500), title="Integrands")
+                        label="Low y integrand", size=(800, 500), title="Integrands")
     plot!(yy, integ2, 
-                  label="Integrand 2")
+                  label="High y integrand")
     #plot!([τ^-1], seriestype=:vline, label="", color=:red, annotations=(τ^-1*1.1, minimum(abs.(integ1)), ("τ^-1'", 6, :bottom, :left, :red)))
 end # function ΔEdrudeχ̃plot
 

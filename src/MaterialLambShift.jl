@@ -39,16 +39,11 @@ export localresponse
 export localresponseunit
 export asymptcheck
 export getν
-export ΔEdrudeint1
-export ΔEdrudeint1unit
-export ΔEdrudeintunit
-export ΔEdrudeint2
-export ΔEdrudeχ̃
+export ΔEanyint
+export χdrude
 export ΔEdrudeintegunitplot
+export ΔEdrudeintunit
 export ΔEdrudeχ̃plot
-export ΔEdrudeisoold
-export ΔEdrudecoefold
-export ΔEdrudeintold
 export drudeτplot
 export druder0plot
 export mybesselj
@@ -1389,79 +1384,130 @@ function localresponse(r, ω)
     return χ
 end # function localresponse
 
-# Integrates the A coefficient for ΔE due to the anis. part of an 
-# anisotropic Drude ES response with relaxation time τ and conductivity 
-# anis. δσ.
-# The ES plane is taken to have smallest distance r0 to the wire centre
-function ΔEdrudecoef(τ, δσ, r0)
-    # Integration over x direction
-    maxrq = 1e7
-    rint = quadgk(r -> ΔEdrudeint1(r, τ, r0), r0, maxrq*r0)
-    return -δσ/(32*pi*τ)*rint
-end # function ΔEdrude
+# Integrates the unitless energy shift along w, u, p, m, at the same time, due
+# to some given polarizability anisotropy χ(ω)
+function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=6.1, minw=0.01, initdiv=35, pmscale=6, umscale=4)
+    maxw = maxwq*rα^-1
 
-# Integrates the energy shift along r, after doing ω
-function ΔEdrudeint2(τ, r0; rtol=1e-2)
-    maxrq = 2
-    intfull = quadgk(r -> ΔEdrudeint1(r, τ, r0), r0, maxrq*r0, rtol=rtol)
-    return intfull
+    maxu = rα*(1 + maxuq)
+
+    counter = 0
+
+    atol = 0 # Current atol owing to previous integration
+    inttot = 0 # Total result
+
+    m = 0
+    mint = NaN # Total contribution from last m
+    while !(abs(mint) < atol/5)
+        # The integrand, it appears parameters are evaluated at fcn call
+        function integ((w, u, p))
+            integ = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
+                          [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] *
+                          χ(im*w, χpar...))[1])
+            if isnan(integ)
+                println("NaN found for intega at w=$w, u=$u, p=$p")
+            end
+            counter += 1
+            return integ
+        end # function integ
+
+        maxp = maxpq/rα*(abs(m)/pmscale + 1)
+        maxu = rα*(maxuq/(umscale*abs(m) + 1) + 1)
+
+        int = hcubature(integ, (minw, rα+1e-12, -maxp), (maxw, maxu, maxp), rtol=rtol, atol=atol, initdiv=initdiv)
+        atol += rtol*abs(int[1])
+
+        mint = int[1]
+
+        inttot += int[1]
+
+        println("Integral for m=$m done, result is $(int[1]), atol is $atol")
+        m += 1
+    end
+    return (inttot, counter)
 end # function ΔEdrudeint1
 
-# Integrates the energy shift along ω
-function ΔEdrudeint1(r, r0, τ; α=100, β=20, rtol=1e-2) 
-    # For whatever reason function calls depends in some oscillatory manner on
-    # α, β
-
-    χ̃0 = ΔEdrudeχ̃(0, r, r0)
-    χ̃τ = ΔEdrudeχ̃(im*τ^-1, r, r0)
-
-    min = -α*τ^-1
-    mid = τ^-1/2
-    max = β*τ^-1
-    corr1 = -τ*χ̃0*log(1 + α^-1)/(mid - min)
-    corr2 = τ*χ̃τ*log(1 - β^-1)/(max - mid) 
-
-    # Cut out tail integrals for now
-    #intc = quadgk_count(y -> ΔEdrudeχ̃(im*y, r, r0)/(y*(y-τ^-1)), -Inf, min, rtol=rtol)
-    #intd = quadgk_count(y -> ΔEdrudeχ̃(im*y, r, r0)/(y*(y-τ^-1)), max, Inf, rtol=rtol)
-    inta = quadgk_count(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃0)/(y*(y-τ^-1))
-                                                               + corr1
-                                                               , min, 0, mid, rtol=rtol)
-    # println("First integral done")
-    intb = quadgk_count(y -> (ΔEdrudeχ̃(im*y, r, r0) - χ̃τ)/(y*(y-τ^-1)) + corr2, mid, τ^-1, max, rtol=rtol)
-    # println("Second integral done")
-    # println("Correction1 = $(corr1*(mid-min)), correction2 = $(corr2*(max-mid))")
-    return (inta .+ intb)[1] # Just returns integral value
-end # function ΔEdrudeint1
-
-# Integrates the energy shift along w, for unitless integrands
-function ΔEdrudeint1unit(u, rα, τα; α=100, β=20, rtol=1e-2) 
-    # For whatever reason function calls depends in some oscillatory manner on
-    # α, β
-
-    χ̃0 = ΔEdrudeχ̃unit(0, u, rα)
-    χ̃τ = ΔEdrudeχ̃unit(im*τα^-1, u, rα)
-
-    min = -α*τα^-1
-    mid = τα^-1/2
-    max = β*τα^-1
-    corr1 = -τα*χ̃0*log(1 + α^-1)/(mid - min)
-    corr2 = τα*χ̃τ*log(1 - β^-1)/(max - mid) 
-
-    intc = quadgk_count(y -> -im*ΔEdrudeχ̃(im*y, u, rα)/(y*(y-τα^-1)), -Inf, min, rtol=rtol)
-    intd = quadgk_count(y -> -im*ΔEdrudeχ̃(im*y, u, rα)/(y*(y-τα^-1)), max, Inf, rtol=rtol)
-    inta = quadgk_count(y -> -im*(ΔEdrudeχ̃(im*y, u, rα) - χ̃0)/(y*(y-τα^-1))
-                                                               + corr1
-                                                               , min, 0, mid, rtol=rtol)
-    # println("First integral done")
-    intb = quadgk_count(y -> -im*(ΔEdrudeχ̃(im*y, u, rα) - χ̃τ)/(y*(y-τα^-1)) + corr2, mid, τα^-1, max, rtol=rtol)
-    # println("Second integral done")
-    # println("Correction1 = $(corr1*(mid-min)), correction2 = $(corr2*(max-mid))")
-    return (inta .+ intb .+ intc .+ intd)[1] # Just returns integral value
-end # function ΔEdrudeint1
+# Drude functional behaviour for testing
+function χdrude(ω, τ)
+    return im/(ω*(1-im*ω*τ))
+end # function χdrude
 
 # Integrates the unitless energy shift along w, u, p, m, at the same time
-function ΔEdrudeintunit(rα, τα; rtol=1e-3, maxuq=20.7, maxpq=12, maxyq=2.01, initdiv=1, pmscale=3)
+function ΔEdrudeintunit(rα, τα; rtol=1e-2, maxuq=20.7, maxpq=20, maxwq=0.2, minw=0.01, initdiv=1, pmscale=6, umscale=4)
+    maxw = maxwq*τα^-1
+
+    counter = 0
+
+    atol = 0 # Current atol owing to previous integration
+    inttot = 0 # Total result
+
+    m = 0
+    mint = 0 # Total contribution from last m
+    while !(abs(mint) < atol/5 || isnan(mint)) || m == 0
+        # The integrand, it appears parameters are evaluated at fcn call
+        function integ((w, u, p))
+            integ = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
+                          [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)]
+                          /(w*(w+τα^-1)))[1])
+            if isnan(integ) || integ == Inf
+                println("NaN or Inf found for integ at w=$w, u=$u, p=$p")
+            end
+            counter += 1
+            return integ
+        end # function integ
+        maxp = maxpq/rα*(abs(m)/pmscale + 1)
+        maxu = rα*(maxuq/(umscale*abs(m) + 1) + 1)
+
+        int = hcubature(integ, (minw, rα+1e-12, -maxp), (maxw, maxu, maxp), rtol=rtol, atol=atol,
+                       initdiv=initdiv)
+
+        atol += rtol*abs(int[1])
+
+        mint = int[1]
+
+        inttot += int[1]
+
+        println("Integral for m=$m done, result is $(int[1]), atol is $atol")
+        m += 1
+    end
+    return (inttot, counter)
+end # function ΔEdrudeint1
+
+# Plots heatmap of abs of integrands to ΔEdrudeintunit
+function ΔEdrudeintegunitplot(rα, τα, m; wmaxq=2, pmaxq=20, wstepq=0.13, pstepq=1, maxuq=20, rtol=1e-2, pmscale=6, wmin=0.01, umscale=5)
+    wmax = wmaxq*τα^-1
+    wstep = wstepq*τα^-1
+    ww = wmin:wstep:wmax
+    pmax = pmaxq*rα^-1*(abs(m/pmscale)+1)
+    pstep = pstepq*rα^-1*(abs(m/pmscale)+1)
+    pp = -pmax:pstep:pmax
+    wgrid = ones(length(pp)) *ww'
+    pgrid = pp * ones(length(ww))'
+    #umaxa = rα*(ones(length(pp), length(wwa)) .+ abs.(umaxq.*wgrida.^-1 .*pgrida.^-1))
+    umax = rα.*(maxuq/(umscale*abs(m) + 1) + 1).*ones(length(pp), length(ww))
+    function integf(w, u, p)
+        #println("w=$w, u=$u, p=$p")
+        integ = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
+                      [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)]
+                      /(w*(w+τα^-1)))[1])
+
+        if isnan(integ)
+            println("NaN found for intega at w=$w, u=$u, p=$p")
+        end
+        return integ
+    end # function integf
+
+    resgrid = quadgk.([u -> integf(w, u, p) for (w, p) in zip(wgrid, pgrid)],
+                        rα, umax, rtol=rtol)
+    # Fix for quadgk putting a tuple in the innermost dimension
+    resgrid = [item[1] for item in resgrid]
+    plot(ww, pp, resgrid, seriestype=:heatmap, xlabel="w", ylabel="p")
+end # function Δdrudeintegunitplot
+
+# Integrates the unitless energy shift along w, u, p, m, at the same time (Old
+# version for PV)
+function ΔEdrudeintunit_old(rα, τα; rtol=1e-3, maxuq=20.7, maxpq=12, maxyq=2.01,
+        initdiv=1, pmscale=3)
     maxy = maxyq*τα^-1 + τα^-1/2
     miny = -maxyq*τα^-1 + τα^-1/2
     midy = τα^-1/2
@@ -1522,8 +1568,8 @@ function ΔEdrudeintunit(rα, τα; rtol=1e-3, maxuq=20.7, maxpq=12, maxyq=2.01,
     return (inttota, inttotb, counter)
 end # function ΔEdrudeint1
 
-# Plots heatmap of abs of integrands to ΔEdrudeintunit
-function ΔEdrudeintegunitplot(rα, τα, m; ymaxq=2, pmaxq=4, ystepq=0.13, pstepq=1, umaxq=20, rtol=1e-2, pmscale=3)
+# Plots heatmap of abs of integrands to ΔEdrudeintunit_old
+function ΔEdrudeintegunitplot_old(rα, τα, m; ymaxq=2, pmaxq=4, ystepq=0.13, pstepq=1, umaxq=20, rtol=1e-2, pmscale=3)
     ymax = ymaxq*τα^-1
     ystep = ystepq*τα^-1
     yy = -ymax:ystep:ymax
@@ -1576,6 +1622,7 @@ function ΔEdrudeintegunitplot(rα, τα, m; ymaxq=2, pmaxq=4, ystepq=0.13, pste
     resgrid = [resgrida;; resgridb]
     plot(yy, pp, resgrid, seriestype=:heatmap, xlabel="y", ylabel="p")
 end # function Δdrudeintegunitplot
+
 
 # Integrates the energy shift along r, ω, at the same time
 function ΔEdrudeint(r, r0, τ; α=20, β=20)

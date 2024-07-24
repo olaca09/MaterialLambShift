@@ -1386,7 +1386,7 @@ end # function localresponse
 
 # Integrates the unitless energy shift along w, u, p, m, at the same time, due
 # to some given polarizability anisotropy χ(ω)
-function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=6.1, minw=0.01, initdiv=35, pmscale=6, umscale=4)
+function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0.01, initdiv=35, pmscale=6, umscale=4, atolscale=5)
     maxw = maxwq*rα^-1
 
     maxu = rα*(1 + maxuq)
@@ -1398,7 +1398,7 @@ function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, m
 
     m = 0
     mint = NaN # Total contribution from last m
-    while !(abs(mint) < atol/5)
+    while !(abs(mint) < atol/atolscale)
         # The integrand, it appears parameters are evaluated at fcn call
         function integ((w, u, p))
             integ = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
@@ -1503,198 +1503,6 @@ function ΔEdrudeintegunitplot(rα, τα, m; wmaxq=2, pmaxq=20, wstepq=0.13, pst
     resgrid = [item[1] for item in resgrid]
     plot(ww, pp, resgrid, seriestype=:heatmap, xlabel="w", ylabel="p")
 end # function Δdrudeintegunitplot
-
-# Integrates the unitless energy shift along w, u, p, m, at the same time (Old
-# version for PV)
-function ΔEdrudeintunit_old(rα, τα; rtol=1e-3, maxuq=20.7, maxpq=12, maxyq=2.01,
-        initdiv=1, pmscale=3)
-    maxy = maxyq*τα^-1 + τα^-1/2
-    miny = -maxyq*τα^-1 + τα^-1/2
-    midy = τα^-1/2
-
-    maxu = rα*(1 + maxuq)
-
-    counter = 0
-
-    atol = 0 # Current atol owing to previous integration
-    inttota = 0 # Total result for lower y-half
-    inttotb = 0 # Total result for upper y-half
-
-    m = 0
-    mint = NaN # Total contribution from last m
-    while !(abs(mint) < atol/10)
-        # The integrand, it appears parameters are evaluated at fcn call
-        maxp = maxpq/rα*(abs(m)/pmscale + 1)
-        function intega((y, u, p))
-            integ = imag((([1;; 1;; -1]*diffresponseunit(u, u, im*y, m, p, diagonal=true) *
-             [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] -
-             [1;; 1;; -1]*diffresponseunit(u, u, 0, m, p, diagonal=true) *
-             [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)])/
-                          (y*(y-τα^-1)))[1])
-            if isnan(integ)
-                println("NaN found for intega at y=$y, u=$u, p=$p")
-            end
-            counter += 1
-            return integ
-        end # function intega
-        inta = hcubature(intega, (miny, rα+1e-12, -maxp), (midy, maxu, maxp), rtol=rtol, atol=atol)
-        println("First integral for m=$m done")
-        atol += rtol*abs(inta[1])
-    
-        function integb((y, u, p))
-            integ = imag((([1;; 1;; -1]*diffresponseunit(u, u, im*y, m, p, diagonal=true) *
-                                  [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] -
-                                [1;; 1;; -1]*diffresponseunit(u, u, im*τα^-1, m, p, diagonal=true) *
-                                  [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)])/
-                          (y*(y-τα^-1)))[1])
-            if isnan(integ)
-                println("NaN found for integb at y=$y, u=$u, p=$p")
-            end
-            counter += 1
-            return integ
-        end # function integb
-        intb = hcubature(integb, (midy, rα+1e-12, -maxp), (maxy, maxu, maxp), rtol=rtol, atol=atol)
-        println("Second integral for m=$m done")
-        atol += rtol*abs(intb[1])
-
-        mint = inta[1] + intb[1]
-        inttota += inta[1]
-        inttotb += intb[1]
-
-        println("The result from m=$m is inta=$(inta[1]), intb=$(intb[1])")
-        println("The current absolute tolerance is $atol")
-        m += 1
-    end
-    return (inttota, inttotb, counter)
-end # function ΔEdrudeint1
-
-# Plots heatmap of abs of integrands to ΔEdrudeintunit_old
-function ΔEdrudeintegunitplot_old(rα, τα, m; ymaxq=2, pmaxq=4, ystepq=0.13, pstepq=1, umaxq=20, rtol=1e-2, pmscale=3)
-    ymax = ymaxq*τα^-1
-    ystep = ystepq*τα^-1
-    yy = -ymax:ystep:ymax
-    yya = yy[yy .<= τα^-1/2]
-    yyb = yy[yy .> τα^-1/2]
-    pmax = pmaxq*rα^-1*(abs(m/pmscale)+1)
-    pstep = pstepq*rα^-1*(abs(m/pmscale)+1)
-    pp = -pmax:pstep:pmax
-    ygrida = ones(length(pp)) *yya'
-    ygridb = ones(length(pp)) *yyb'
-    pgrida = pp * ones(length(yya))'
-    pgridb = pp * ones(length(yyb))'
-    #umaxa = rα*(ones(length(pp), length(yya)) .+ abs.(umaxq.*ygrida.^-1 .*pgrida.^-1))
-    umaxa = rα.*(1 + umaxq/m).*ones(length(pp), length(yya))
-    #umaxb = rα*(ones(length(pp), length(yyb)) .+ abs.(umaxq.*ygridb.^-1 .*pgridb.^-1))
-    umaxb = rα.*(1 + umaxq/m).*ones(length(pp), length(yyb))
-    function intega(y, u, p)
-        #println("y=$y, u=$u, p=$p")
-        integ = imag((([1;; 1;; -1]*diffresponseunit(u, u, im*y, m, p, diagonal=true) *
-         [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] 
-          - [1;; 1;; -1]*diffresponseunit(u, u, 0, m, p, diagonal=true) *
-         [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)]
-         )/(y*(y-τα^-1)))[1])
-        if isnan(integ)
-            println("NaN found for intega at y=$y, u=$u, p=$p")
-        end
-        return integ
-    end # function intega
-
-    function integb(y, u, p)
-        integ = imag((([1;; 1;; -1]*diffresponseunit(u, u, im*y, m, p, diagonal=true) *
-                              [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] 
-                              - [1;; 1;; -1]*diffresponseunit(u, u, im*τα^-1, m, p, diagonal=true
-                              ) * [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)]
-                             )/
-                      (y*(y-τα^-1)))[1])
-        if isnan(integ)
-            println("NaN found for integb at y=$y, u=$u, p=$p")
-        end
-        return integ
-    end # function integb
-
-    resgrida = quadgk.([u -> intega(y, u, p) for (y, p) in zip(ygrida, pgrida)],
-                        rα, umaxa, rtol=rtol)
-    resgridb = quadgk.([u -> integb(y, u, p) for (y, p) in zip(ygridb, pgridb)],
-                        rα, umaxb, rtol=rtol)
-    # Fix for quadgk putting a tuple in the innermost dimension
-    resgrida = [item[1] for item in resgrida]
-    resgridb = [item[1] for item in resgridb]
-    resgrid = [resgrida;; resgridb]
-    plot(yy, pp, resgrid, seriestype=:heatmap, xlabel="y", ylabel="p")
-end # function Δdrudeintegunitplot
-
-
-# Integrates the energy shift along r, ω, at the same time
-function ΔEdrudeint(r, r0, τ; α=20, β=20)
-    # For whatever reason increasing α, β, seems to decrease function calls, up
-    # to some limit
-    maxrq = 2
-    miny = -α*τ^-1
-    midy = τ^-1/2
-    maxy = β*τ^-1
-    #ERROR in integration bounds
-    inta = hcubature((y, r) -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(0, r, r0))/(y*(y-τ^-1)),
-                     (-α*τ^-1, 0), (r0, maxrq*r0))
-    println("First integral done")
-    intb = hcubature((y, r) -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(0, r, r0))/(y*(y-τ^-1)),
-                     (0, τ^-1/2), (r0, maxrq*r0))
-    println("Second integral done")
-    intc = hcubature((y, r) -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(im*τ^-1, r, r0))/(y*(y-τ^-1)), 
-                     (τ^-1/2, τ^-1), (r0, maxrq*r0))
-    println("Third integral done")
-    intd = hcubature((y, r) -> (ΔEdrudeχ̃(im*y, r, r0) - ΔEdrudeχ̃(im*τ^-1, r, r0))/(y*(y-τ^-1)), 
-                     (τ^-1, β*τ^-1), (r0, maxrq*r0))
-    println("Fourth integral done")
-    return inta .+ intb .+ intc .+ intd
-end # function ΔEdrudeint1
-
-# Integrands for ΔEdrudecoef, factor δσ/2 off from paper version
-function ΔEdrudeχ̃(ω, r, r0)
-    a = √(r^2-r0^2)
-    χ = localresponse(r, ω)
-    χ̃ = a/r*χ[1, 1] + r0^2/(a*r)*χ[2, 2] - r/a*χ[3, 3]
-    return χ̃
-end # function ΔEdrudeχ̃
-
-# Integrands for ΔEdrudecoef, unitless version
-function ΔEdrudeχ̃unit(w, u, rα)
-    a = √(u^2-rα^2)
-    χ = localresponseunit(u, w)
-    χ̃ = a/u*χ[1, 1] + rα^2/(a*u)*χ[2, 2] - u/a*χ[3, 3]
-    return χ̃
-end # function ΔEdrudeχ̃unit
-
-# Plots integrands for ΔEdrudeint1unit as a function of y
-function ΔEdrudeχ̃plot(u, r0, τα; ymin=-5, ystep=0.01, ymax=5, α=10, β=10)
-    yy = ymin:ystep:ymax
-    χ̃0 = ΔEdrudeχ̃unit(0, u, r0)
-    χ̃τ = ΔEdrudeχ̃unit(im*τα^-1, u, r0)
-    integ1 = []
-    integ2 = []
-
-    #println("χ̃0 = $χ̃0")
-    #println("χ̃τ = $χ̃τ")
-
-    for y in yy
-        χ̃ = ΔEdrudeχ̃unit(im*y, u, r0)
-
-        push!(integ1, (χ̃-χ̃0f)/(y*(y-τ^-1)))
-        push!(integ2, (χ̃-χ̃τf)/(y*(y-τ^-1)))
-        println("y = $y done!")
-    end # for
-    # Mask low values, for now
-    absmin = 1e-20
-    integ1[abs.(integ1) .< absmin] .= absmin
-    integ2[abs.(integ2) .< absmin] .= absmin
-    integ1[isnan.(integ1)] .= 0
-    integ2[isnan.(integ2)] .= 0
-
-    integralplot = plot(yy, integ1, 
-                        label="Low y integrand", size=(800, 500), title="Integrands")
-    plot!(yy, integ2, 
-                  label="High y integrand")
-    #plot!([τ^-1], seriestype=:vline, label="", color=:red, annotations=(τ^-1*1.1, minimum(abs.(integ1)), ("τ^-1'", 6, :bottom, :left, :red)))
-end # function ΔEdrudeχ̃plot
 
 # Plots Hankel functions for clarity
 function hankelplot(m; step=0.01, xmin=0, xmax=2)

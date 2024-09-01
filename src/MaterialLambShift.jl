@@ -2,7 +2,6 @@ module MaterialLambShift
 
 #using Bessels #Does not support complex arguments
 using SpecialFunctions
-using JLD
 using Plots
 using LinearAlgebra
 using StaticArrays
@@ -32,38 +31,24 @@ export kcheckunit
 export qcheck
 export localresponseωplot
 export localresponseiωplot
-export localresponsewplot
-export localresponseiwplot
 export disccheck
 export localresponse
 export localresponseunit
 export asymptcheck
 export getν
 export ΔEanyint
+export ΔEheatmap
 export χdrude
+export χconst
+export χESplot
+export χdrudescreened
 export ΔEdrudeintegunitplot
 export ΔEdrudeintunit
-export ΔEdrudeχ̃plot
-export drudeτplot
-export druder0plot
 export mybesselj
 
 ## Variable setup
-const rw::Float64 = 0.1 # Wire width, ls
+# const rw::Float64 = 0.1 # Wire width, ls
 const iϵ::ComplexF64 = 1e-11im # Causality fixer
-
-# Wrapper to run ΔEdrudeint1, saving results to file save_filename
-function savetofile_Edrudeint1(save_filename, r, r0, τ)
-    result = ΔEdrudeint1(r, r0, τ)
-    save(save_filename * ".jld", "result", result)
-end # function wrapper_Edrudeint1
-
-# Wrapper to run localresponse, saving results to file save_filename
-function savetofile_localresponse(save_filename, r, ω)
-    println("Started calculating r=$r, ω$ω, in julia")
-    result = localresponse(r, ω)
-    save(save_filename * ".jld", "result", result)
-end # function wrapper_Edrudeint1
 
 # Returns tuple of Hankel function coordinates (αE, βE, γE, αB, βB, γB)
 # consistent with a fluctuating dipole at distance rd from the axis of
@@ -494,7 +479,7 @@ end # function staticresponse
 
 # Returns dynamical response(Er, Eθ, Ez)^t * (dr, dθ, dz) at distance r,
 # r′ for ω, m, k
-function dynamicresponse(r, r′, ω, m, k; verbatim=false)
+function dynamicresponse(r, r′, ω, m, k; verbatim=false, rw=1)
     kcfac = 1e2 #factor to determine kc
     ν = getν(ω, k)
     # Fix large k errors by returning 0 instead
@@ -567,7 +552,7 @@ end # function dynamicresponse
 # Adds causality fix iη by itself
 # Contains no common prefactor to the matrix, this has to be added
 # at a later stage
-function diffresponseunit(u, u′, w, m, p; diagonal=false)
+function diffresponseunit(u, u′, w, m, p; diagonal=false, rw=1)
     # kcfac = 1e2 #factor to determine kc
     w = w + iϵ
     ν = getν(w, p)
@@ -616,7 +601,7 @@ end # function diffresponseunit
 # Returns difference of dynamic wire and free response (Er, Eθ, Ez)^t * (dr, dθ, dz) at distance r,
 # r′ for ω, m, k
 # Has to be called with causality fix +iϵ to ω
-function diffresponse(r, r′, ω, m, k; verbatim=false, diagonal=false)
+function diffresponse(r, r′, ω, m, k; verbatim=false, diagonal=false, rw=1)
     # kcfac = 1e2 #factor to determine kc
     ν = getν(ω, k)
     # Fix large k errors by returning 0 instead
@@ -872,12 +857,12 @@ function localresponsewplot(u; wmin=-20, wstep=0.1, wmax=20)
 end # function localresponsewplot
 
 # Plots the local renormalized unitless response vs imaginary w for a given u
-function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11)
+function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11, rw = 1)
     ww = im*(wmin:wstep:wmax)
     χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
     for w in ww
 
-        χ = localresponseunit(u, w)
+        χ = localresponseunit(u, w, rw)
         push!(χrr, χ[1, 1])
         push!(χθr, χ[2, 1])
         push!(χzr, χ[3, 1])
@@ -1316,7 +1301,7 @@ end # function disccheck
 # Currently these make crazy amounts of calls, order 12k, also below for the
 # non-unit version, PS this is only true for real w,
 # imag w give much fewer calls!
-function localresponseunit(u, w; rtol=1e-2)
+function localresponseunit(u, w; rtol=1e-2, rw=1)
     maxp = 3*abs(w) # This could maybe be refined for ω imaginary
     if real(w) == 0
         maxp = 10*u^-1
@@ -1350,7 +1335,7 @@ function localresponseunit(u, w; rtol=1e-2)
 end # function localresponse
 
 # Returns local response diff at position r
-function localresponse(r, ω)
+function localresponse(r, ω; rw=1)
     maxk = 3*abs(ω) # This could maybe be refined for ω imaginary
     if real(ω) == 0
         maxk = 100*r^-1
@@ -1364,7 +1349,7 @@ function localresponse(r, ω)
     m::Int64 = 0
     while true
         #println("m = $m")
-        χm, error, count = (quadgk_count((k -> diffresponse(r, r, ω + iϵ, m, k, diagonal=true)), -maxk, maxk))
+        χm, error, count = (quadgk_count((k -> diffresponse(r, r, ω + iϵ, m, k, diagonal=true, rw=1)), -maxk, maxk))
         # The above quadgk is type unstable, limiting performance
 
         χ::SMatrix{3, 3, Complex, 9} = χ + 2 *χm
@@ -1384,9 +1369,30 @@ function localresponse(r, ω)
     return χ
 end # function localresponse
 
+# Calculates the energy shift due to a polarizability χ(ω, τ) for a square
+# region of parameters rα, τα, and plots as a heatmap
+function ΔEheatmap(χ::Function; minrα=1.3, maxrα=3, steprα=0.2, minτα=0.1, maxτα=10, stepτα=2, rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0.01, initdiv=35, pmscale=6, umscale=4, atolscale=5)
+    rr = (minrα:steprα:maxrα)
+    ττ = (minτα:stepτα:maxτα)
+    rgrid = ones(length(ττ)) * rr'
+    τgrid = ττ * ones(length(rr))'
+
+    ΔEgrid = ΔEanyint.(rgrid, χ, τgrid, rtol=rtol, maxuq=maxuq, maxpq=maxpq, maxwq=maxwq, 
+                       minw=minw, initdiv=initdiv, pmscale=pmscale, umscale=umscale,
+                       atolscale=atolscale)
+    # Fix for ΔEanyint returning a tuple also including function call counter
+    ΔEgrid = [item[1] for item in ΔEgrid]
+    println("Result = $ΔEgrid")
+    plot(rr, ττ, ΔEgrid, seriestype=:heatmap, xlabel="rα", ylabel="τα", plot_title="ΔE due to Drude response")
+
+end # function ΔEheatmap
+# For this I should really use Radu's scripts instead
+
 # Integrates the unitless energy shift along w, u, p, m, at the same time, due
-# to some given polarizability anisotropy χ(ω)
-function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0.01, initdiv=35, pmscale=6, umscale=4, atolscale=5)
+# to some given polarizability anisotropy χ(ω). The polarizability should
+# contain all prefactors, i.e. have the correct unit, and take ω (not w) as
+# argument.
+function ΔEanyint(rα, rw, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0, initdiv=35, pmscale=6, umscale=4, atolscale=5)
     maxw = maxwq*rα^-1
 
     maxu = rα*(1 + maxuq)
@@ -1403,7 +1409,7 @@ function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, m
         function integ((w, u, p))
             integ = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
                           [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] *
-                          χ(im*w, χpar...))[1])
+                          χ(im*w/rw, χpar...))[1])
             if isnan(integ)
                 println("NaN found for intega at w=$w, u=$u, p=$p")
             end
@@ -1425,12 +1431,53 @@ function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, m
         m += 1
     end
     return (inttot, counter)
-end # function ΔEdrudeint1
+end # function ΔEanyint
 
-# Drude functional behaviour for testing
-function χdrude(ω, τ)
-    return im/(ω*(1-im*ω*τ))
+# Unscreened Drude 
+function χdrude(ω, τ, δσ)
+    return δσ*im/(ω*(1-im*ω*τ))
 end # function χdrude
+
+# Constant functional behaviour
+function χconst(ω, val)
+    return val
+end # function χconst
+
+# Screened Drude functional behaviour
+function χdrudescreened(ω, τ, σ0, δσ)
+    return -δσ*im*ω*(1-im*ω*τ)/((σ0-im*ω*(1-im*ω*τ))^2 - δσ^2)
+end # function χdrudescreened
+
+# Plots the given list of polarizabilities versus w
+function χESplot(χlist, χparlist; wmin=0.01, wmax=10, wstep=0.05)
+    ww = wmin:wstep:wmax
+    # println(collect(ww))
+    plot()
+    χχ = []
+    for (χ, χpar) in zip(χlist, χparlist)
+        χχ = Real.(χ.(im.*ww, χpar...))
+        #println(χχ)
+        plot!(ww, χχ, 
+             title="Polarizabilities as a function of w", 
+             xlabel='w', label=String(Symbol(χ)))
+    end
+    plot!()
+
+end #function χESplot
+
+# Plots the given list of polarizabilities for some ω vs τ
+function χESτplot(χlist, χparlist, ω; τmin=0.01, τmax=10, τstep=0.05)
+    ττ = τmin:τstep:τmax
+    plot()
+    χχ = []
+    for (χ, χpar) in zip(χlist, χparlist)
+        χχ = Real.(χ.(im*ω, im*ττ, χpar...))
+        plot!(ττ, χχ, 
+             title="Polarizabilities as a function of τ", 
+             xlabel='τ', label=String(Symbol(χ)))
+    end
+    plot!()
+end # function χESτplot
 
 # Integrates the unitless energy shift along w, u, p, m, at the same time
 function ΔEdrudeintunit(rα, τα; rtol=1e-2, maxuq=20.7, maxpq=20, maxwq=0.2, minw=0.01, initdiv=1, pmscale=6, umscale=4)

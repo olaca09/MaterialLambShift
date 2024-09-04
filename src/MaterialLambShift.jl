@@ -1361,7 +1361,7 @@ end # function ΔEheatmap
 # to some given polarizability anisotropy χ(ω). The polarizability contains no
 # prefactor δσ, and takes w, τα as
 # argument.
-function ΔEanyint(rα, rw, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0, initdiv=35, pmscale=6, umscale=4, atolscale=5)
+function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0, initdiv=35, pmscale=6, umscale=4, atolscale=5)
     maxw = maxwq*rα^-1
 
     maxu = rα*(1 + maxuq)

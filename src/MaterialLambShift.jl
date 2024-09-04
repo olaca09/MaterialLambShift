@@ -1358,8 +1358,8 @@ end # function ΔEheatmap
 # For this I should really use Radu's scripts instead
 
 # Integrates the unitless energy shift along w, u, p, m, at the same time, due
-# to some given polarizability anisotropy χ(ω). The polarizability should
-# contain all prefactors, i.e. have the correct unit, and take ω (not w) as
+# to some given polarizability anisotropy χ(ω). The polarizability contains no
+# prefactor δσ, and takes w, τα as
 # argument.
 function ΔEanyint(rα, rw, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0, initdiv=35, pmscale=6, umscale=4, atolscale=5)
     maxw = maxwq*rα^-1

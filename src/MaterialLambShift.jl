@@ -1358,7 +1358,7 @@ end # function ΔEheatmap
 # For this I should really use Radu's scripts instead
 
 # Integrates the unitless energy shift along w, u, p, m, at the same time, due
-# to some given conductivity anisotropy χ(ω). The conductivity is may have a
+# to some given conductivity anisotropy χ(w). The conductivity may have a
 # prefactor added in postprocessing, and takes w as
 # argument.
 function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0, initdiv=35, pmscale=6, umscale=4, atolscale=5)
@@ -1404,7 +1404,7 @@ end # function ΔEanyint
 
 # Unscreened Drude 
 function χdrude(w, τα)
-    return (1-im*w*τα)
+    return 1e-14/(1-im*w*τα)
 end # function χdrude
 
 # Constant functional behaviour

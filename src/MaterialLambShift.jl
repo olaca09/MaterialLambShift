@@ -1358,10 +1358,10 @@ end # function ΔEheatmap
 # For this I should really use Radu's scripts instead
 
 # Integrates the unitless energy shift along w, u, p, m, at the same time, due
-# to some given conductivity anisotropy χ(w). The conductivity may have a
-# prefactor added in postprocessing, and takes w as
+# to some given polarizability anisotropy χ(ω). The polarizability should
+# contain all prefactors, i.e. have the correct unit, and take ω (not w) as
 # argument.
-function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0, initdiv=35, pmscale=6, umscale=4, atolscale=5)
+function ΔEanyint(rα, rw, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0, initdiv=35, pmscale=6, umscale=4, atolscale=5)
     maxw = maxwq*rα^-1
 
     maxu = rα*(1 + maxuq)
@@ -1377,7 +1377,7 @@ function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, m
         # The integrand, it appears parameters are evaluated at fcn call
         function integ((w, u, p))
             integ = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
-                          [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] *im/w*
+                          [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] *
                           χ(im*w, χpar...))[1])
             if isnan(integ)
                 println("NaN found for intega at w=$w, u=$u, p=$p")
@@ -1404,7 +1404,7 @@ end # function ΔEanyint
 
 # Unscreened Drude 
 function χdrude(w, τα)
-    return 1e-14/(1-im*w*τα)
+    return im/(w*(1-im*w*τα)) # Code stops converging if I bring the factor im/w outside
 end # function χdrude
 
 # Constant functional behaviour

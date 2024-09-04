@@ -19,6 +19,7 @@ export dlayerradialresponse
 export dlayerradialdynresponse
 export hankelplot
 export hankelfcnvalues
+export hankelplotimag
 export dlayerresponsecoef
 export coeftoresponse
 export staticresponse
@@ -31,6 +32,7 @@ export kcheckunit
 export qcheck
 export localresponseωplot
 export localresponseiωplot
+export localresponseiwplot
 export disccheck
 export localresponse
 export localresponseunit
@@ -618,8 +620,6 @@ function diffresponse(r, r′, ω, m, k; verbatim=false, diagonal=false, rw=1)
     Y′w = 1/2*(mybessely(m-1, ν*rw) - mybessely(m+1, ν*rw))
     Qpref = -2*Jw/(Jw + im*Yw)
     QBpref = -2*J′w/(J′w + im*Y′w)
-    #println("Qpref=$Qpref")
-    #println("QBpref=$QBpref")
     
     # I suspect that the nan-check is no longer needed anymore, couldn't find
     # the right parameters to test it though
@@ -633,37 +633,6 @@ function diffresponse(r, r′, ω, m, k; verbatim=false, diagonal=false, rw=1)
     H1′ = hankelh1(m, ν*r′)
     H′1 = 1/2*(hankelh1(m-1, ν*r) - hankelh1(m+1, ν*r)) #
     H′1′ = 1/2*(hankelh1(m-1, ν*r′) - hankelh1(m+1, ν*r′))  #
-#    println("H1 = $H1")
-#    println("H1′ = $H1′")
-#    println("H′1 = $H′1")
-#    println("H′1′ = $H′1′")
-#    if verbatim
-#        println("ν = $ν")
-#        println("H1w = $H1w")
-#        println("H2w = $H2w")
-#        println("H′1w = $H′1w")
-#        println("H′2w = $H′2w")
-#        println("H1 = $H1")
-#        println("H2 = $H2")
-#        println("H′1 = $H′1")
-#        println("H′2 = $H′2")
-#        println("H1′ = $H1′")
-#        println("H2′ = $H2′")
-#        println("H′1′ = $H′1′")
-#        println("Jw = $Jw")
-#        println("Yw = $Yw")
-#        println("J′w = $J′w")
-#        println("Y′w = $Y′w")
-#        println("H′2′ = $H′2′")
-#        println("Qr = $Qr")
-#        println("Qr′ = $Qr′")
-#        println("QBr = $QBr")
-#        println("QBr′ = $QBr′")
-#        println("Q′r = $Q′r")
-#        println("Q′r′ = $Q′r′")
-#        println("QB′r = $QB′r")
-#        println("QB′r′ = $QB′r′")
-#    end # if
     if !diagonal
         if r > r′
             #Retrieve Hankel fcn values
@@ -862,7 +831,7 @@ function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11, rw = 1)
     χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
     for w in ww
 
-        χ = localresponseunit(u, w, rw)
+        χ = localresponseunit(u, w, rw=rw)
         push!(χrr, χ[1, 1])
         push!(χθr, χ[2, 1])
         push!(χzr, χ[3, 1])
@@ -943,29 +912,29 @@ function localresponseiωplot(r; ωmin=0, ωstep=0.1, ωmax=20, τ=1)
     
     # Computes drude form for comparison
     ceiling = maximum(abs.([χrr; χθθ; χzz]))
-    println(ceiling)
+    #println(ceiling)
     drude = map(x -> 1/x*1/(x-τ^-1), ωω)
     drude[drude .> ceiling] .= ceiling
     drude[drude .< ymin] .= ymin
 
-    χrrplot = plot(ωω, abs.(χrr), line_z=imag(log.(χrr)), 
+    χrrplot = plot(ωω, abs.(χrr), line_z=angle.(χrr), 
                   label="χrr")
     #plot!(ωω, drude, label="Drude form")
-    χθrplot = plot(ωω, abs.(χθr), line_z=imag(log.(χθr)), 
+    χθrplot = plot(ωω, abs.(χθr), line_z=angle.(χθr), 
                   label="χθr")
-    χzrplot = plot(ωω, abs.(χzr), line_z=imag(log.(χzr)), 
+    χzrplot = plot(ωω, abs.(χzr), line_z=angle.(χzr), 
                   label="χzr")
-    χrθplot = plot(ωω, abs.(χrθ), line_z=imag(log.(χrθ)), 
+    χrθplot = plot(ωω, abs.(χrθ), line_z=angle.(χrθ), 
                   label="χrθ")
-    χθθplot = plot(ωω, abs.(χθθ), line_z=imag(log.(χθθ)), 
+    χθθplot = plot(ωω, abs.(χθθ), line_z=angle.(χθθ), 
                   label="χθθ")
-    χzθplot = plot(ωω, abs.(χzθ), line_z=imag(log.(χzθ)), 
+    χzθplot = plot(ωω, abs.(χzθ), line_z=angle.(χzθ), 
                   label="χzθ")
-    χrzplot = plot(ωω, abs.(χrz), line_z=imag(log.(χrz)), 
+    χrzplot = plot(ωω, abs.(χrz), line_z=angle.(χrz), 
                   label="χrz")
-    χθzplot = plot(ωω, abs.(χθz), line_z=imag(log.(χθz)), 
+    χθzplot = plot(ωω, abs.(χθz), line_z=angle.(χθz), 
                   label="χθz")
-    χzzplot = plot(ωω, abs.(χzz), line_z=imag(log.(χzz)), 
+    χzzplot = plot(ωω, abs.(χzz), line_z=angle.(χzz), 
                   label="χzz")
     plot(χrrplot, χrθplot, χrzplot, χθrplot, χθθplot, χθzplot, χzrplot, χzθplot, χzzplot, layout=(3,3), title="Local response", yscale=:log10, xlabel="Im(ω)", size=(800, 500), clims=(0,pi))
 end # function localresponseωplot
@@ -1022,7 +991,7 @@ end # function localresponseωplot
 function kcheck(r, r′, ω, m; kmin=0.0001, kstep=0.001, kmax=4, rd=1)
     kk = kmin:kstep:kmax
     #χsrr, χsθr, χszr, χsrθ, χsθθ, χszθ, χsrz, χsθz, χszz = [[] for _ in 1:9]
-    χxrr, χxθr, χxzr, χxrθ, χxθθ, χxzθ, χxrz, χxθz, χxzz = [[] for _ in 1:9] # Dynamic
+    #χxrr, χxθr, χxzr, χxrθ, χxθθ, χxzθ, χxrz, χxθz, χxzz = [[] for _ in 1:9] # Dynamic
     χdrr, χdθr, χdzr, χdrθ, χdθθ, χdzθ, χdrz, χdθz, χdzz = [[] for _ in 1:9] # Diff.
     #Err, Eθr, Ezr, Erθ, Eθθ, Ezθ, Erz, Eθz, Ezz = [[] for _ in 1:9]
     #Brr, Bθr, Bzr, Brθ, Bθθ, Bzθ, Brz, Bθz, Bzz = [[] for _ in 1:9]
@@ -1389,10 +1358,10 @@ end # function ΔEheatmap
 # For this I should really use Radu's scripts instead
 
 # Integrates the unitless energy shift along w, u, p, m, at the same time, due
-# to some given polarizability anisotropy χ(ω). The polarizability should
-# contain all prefactors, i.e. have the correct unit, and take ω (not w) as
+# to some given conductivity anisotropy χ(ω). The conductivity is may have a
+# prefactor added in postprocessing, and takes w as
 # argument.
-function ΔEanyint(rα, rw, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0, initdiv=35, pmscale=6, umscale=4, atolscale=5)
+function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, maxwq=4, minw=0, initdiv=35, pmscale=6, umscale=4, atolscale=5)
     maxw = maxwq*rα^-1
 
     maxu = rα*(1 + maxuq)
@@ -1408,8 +1377,8 @@ function ΔEanyint(rα, rw, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=4
         # The integrand, it appears parameters are evaluated at fcn call
         function integ((w, u, p))
             integ = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
-                          [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] *
-                          χ(im*w/rw, χpar...))[1])
+                          [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] *im/w*
+                          χ(im*w, χpar...))[1])
             if isnan(integ)
                 println("NaN found for intega at w=$w, u=$u, p=$p")
             end
@@ -1434,8 +1403,8 @@ function ΔEanyint(rα, rw, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=4
 end # function ΔEanyint
 
 # Unscreened Drude 
-function χdrude(ω, τ, δσ)
-    return δσ*im/(ω*(1-im*ω*τ))
+function χdrude(w, τα)
+    return (1-im*w*τα)
 end # function χdrude
 
 # Constant functional behaviour
@@ -1564,6 +1533,25 @@ function hankelplot(m; step=0.01, xmin=0, xmax=2)
     plot!(norm.(H′1))
     plot!(norm.(H′2))
 end # function hankelplot
+#
+# Plots Hankel functions versus imaginary argument
+function hankelplotimag(m; step=0.01, xmin=0.1, xmax=2)
+    range = im*(xmin:step:xmax)
+    H1 = hankelh1.(m, range)
+    #H2 = hankelh2.(m, range)
+    H′1 = 1/2*(hankelh1.(m-1, range) - hankelh1.(m+1, range))
+    #H′2 = 1/2*(hankelh2.(m-1, range) - hankelh2.(m+1, range))
+    J = besselj.(m, range)
+
+    range = imag(range) # Fix for plot
+
+    plot(range, norm.(H1), label="H1", line_z=angle.(H1), title="Hankel functions")
+    plot!(range, norm.(J), label="J", line_z=angle.(J))
+    #plot!(range, norm.(H2), line_z=angle.(H2), label="H2")
+    plot!(range, norm.(H′1), line_z=angle.(H′1), label="H′1")
+    #plot!(range, norm.(H′2), line_z=angle.(H′2), label="H′2")
+end # function hankelplotimag
+
 
 # Plots Q, QB, Qdiff
 function qcheck(ω, m, k; minr=0.1, stepr=0.001, maxr=3)

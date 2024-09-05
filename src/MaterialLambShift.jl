@@ -8,6 +8,7 @@ using StaticArrays
 using QuadGK
 using Debugger
 using HCubature
+using LaTeXStrings
 
 # For proper execution by pyjulia exported names must be ASCII #
 #                           :c                                 #
@@ -30,6 +31,7 @@ export asymptdynamicresponse
 export kcheck
 export kcheckunit
 export qcheck
+export localresponseuplot
 export localresponseωplot
 export localresponseiωplot
 export localresponseiwplot
@@ -824,8 +826,54 @@ function localresponsewplot(u; wmin=-20, wstep=0.1, wmax=20)
                   label="χzz")
     plot(χrrplot, χrθplot, χrzplot, χθrplot, χθθplot, χθzplot, χzrplot, χzθplot, χzzplot, layout=(3,3), title="Local response", yscale=:log10, size=(800, 500), clims=(0, pi))
 end # function localresponsewplot
+# Plots the local renormalized response vs w for a given r
+# Now puts them all in one plot
+# Currently carries the prefac. in u from the integrand ΔF
+function localresponseuplot(w; umin=2.5, ustep=0.01, umax=6, rw=1, rα=2)
+    uu = (umin:ustep:umax)
+    χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
+    for u in uu
+
+        χ = localresponseunit(u, im*w, rw=rw)
+        push!(χrr, χ[1, 1])
+        push!(χθr, χ[2, 1])
+        push!(χzr, χ[3, 1])
+        push!(χrθ, χ[1, 2])
+        push!(χθθ, χ[2, 2])
+        push!(χzθ, χ[3, 2])
+        push!(χrz, χ[1, 3])
+        push!(χθz, χ[2, 3])
+        push!(χzz, χ[3, 3])
+    end # for
+    # Mask low values, for now
+    ymin = 1e-10
+    χrr[abs.(χrr) .< ymin] .= ymin
+    χrθ[abs.(χrθ) .< ymin] .= ymin
+    χrz[abs.(χrz) .< ymin] .= ymin
+    χθr[abs.(χθr) .< ymin] .= ymin
+    χθθ[abs.(χθθ) .< ymin] .= ymin
+    χθz[abs.(χθz) .< ymin] .= ymin
+    χzr[abs.(χzr) .< ymin] .= ymin
+    χzθ[abs.(χzθ) .< ymin] .= ymin
+    χzz[abs.(χzz) .< ymin] .= ymin
+
+    # Add prefactors in u
+    χrr = χrr .* .√(uu.^2 .- rα^2) ./ uu
+    χθθ = χθθ .* rα^2 ./ (uu.*.√(uu.^2 .- rα^2))
+    χzz = χzz .* uu ./ .√(uu.^2 .- rα^2)
+
+    χplot = plot(uu, abs.(χrr), 
+                   label="\$\\tilde{χ}_{diff}^{rr} \\frac{\\sqrt{u^2 - r_\\alpha^2}}{u}\$", yscale=:log10, xlabel="u", size=(800, 500))
+    plot!(uu, abs.(χθθ), 
+          label="\$\\tilde{χ}_{diff}^{\\theta\\theta} \\frac{r_\\alpha^2}{u\\sqrt{u^2-r_\\alpha^2}}\$")
+    plot!(uu, abs.(χzz), 
+          label="\$\\tilde{χ}_{diff}^{zz}\\frac{u}{\\sqrt{u^2-r_\\alpha^2}}\$")
+    return χplot    
+    #savefig("localresponseuplot.png")
+end # function localresponseuplot
 
 # Plots the local renormalized unitless response vs imaginary w for a given u
+# Now puts them all in one plot
 function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11, rw = 1)
     ww = im*(wmin:wstep:wmax)
     χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
@@ -841,7 +889,7 @@ function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11, rw = 1)
         push!(χrz, χ[1, 3])
         push!(χθz, χ[2, 3])
         push!(χzz, χ[3, 3])
-        println("w = $w has been integrated")
+        #println("w = $w has been integrated")
     end # for
     # Mask low values, for now
     ymin = 1e-10
@@ -856,26 +904,14 @@ function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11, rw = 1)
     χzz[abs.(χzz) .< ymin] .= ymin
     ww = abs.(ww) # Fixes axis for plotting
 
-    χrrplot = plot(ww, abs.(χrr), line_z=angle.(χrr), 
-                  label="χrr")
-    #plot!(ww, drude, label="Drude form")
-    χθrplot = plot(ww, abs.(χθr), line_z=angle.(χθr), 
-                  label="χθr")
-    χzrplot = plot(ww, abs.(χzr), line_z=angle.(χzr), 
-                  label="χzr")
-    χrθplot = plot(ww, abs.(χrθ), line_z=angle.(χrθ), 
-                  label="χrθ")
-    χθθplot = plot(ww, abs.(χθθ), line_z=angle.(χθθ), 
-                  label="χθθ")
-    χzθplot = plot(ww, abs.(χzθ), line_z=angle.(χzθ), 
-                  label="χzθ")
-    χrzplot = plot(ww, abs.(χrz), line_z=angle.(χrz), 
-                  label="χrz")
-    χθzplot = plot(ww, abs.(χθz), line_z=angle.(χθz), 
-                  label="χθz")
-    χzzplot = plot(ww, abs.(χzz), line_z=angle.(χzz), 
-                  label="χzz")
-    plot(χrrplot, χrθplot, χrzplot, χθrplot, χθθplot, χθzplot, χzrplot, χzθplot, χzzplot, layout=(3,3), title="Local response", yscale=:log10, xlabel="Im(w)", size=(800, 500), clims=(0,pi))
+    χrrplot = plot(ww, abs.(χrr), 
+                   label="\$\\tilde{χ}_{diff}^{rr}\$", yscale=:log10, xlabel="w", size=(800, 500))
+    plot!(ww, abs.(χθθ), 
+                   label="\$\\tilde{χ}_{diff}^{\\theta\\theta}\$")
+    plot!(ww, abs.(χzz), 
+                   label="\$\\tilde{χ}_{diff}^{zz}\$")
+    #plot(χrrplot, χθθplot, χzzplot, layout=(3,1), yscale=:log10, xlabel="w", size=(800, 500), clims=(0,pi))
+    savefig("localresponseiwplot.png")
 end # function localresponseiwplot
 
 # Plots the local renormalized response vs imaginary ω for a given r
@@ -1299,7 +1335,7 @@ function localresponseunit(u, w; rtol=1e-2, rw=1)
         end # if
         m += 1
     end # for
-    println("Took $counter calls, up to m = $m")
+    #println("Took $counter calls, up to m = $m")
     return χ
 end # function localresponse
 

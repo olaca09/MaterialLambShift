@@ -14,6 +14,7 @@ using LaTeXStrings
 #                           :c                                 #
 
 # export dlayerresponse
+export loglogplot
 export savetofile_localresponse
 export savetofile_Edrudeint1
 export dlayerradialresponse
@@ -31,6 +32,7 @@ export asymptdynamicresponse
 export kcheck
 export kcheckunit
 export qcheck
+export localresponseplots
 export localresponseuplot
 export localresponseωplot
 export localresponseiωplot
@@ -49,6 +51,7 @@ export χdrudescreened
 export ΔEdrudeintegunitplot
 export ΔEdrudeintunit
 export mybesselj
+export normestimate
 
 ## Variable setup
 # const rw::Float64 = 0.1 # Wire width, ls
@@ -829,7 +832,7 @@ end # function localresponsewplot
 # Plots the local renormalized response vs w for a given r
 # Now puts them all in one plot
 # Currently carries the prefac. in u from the integrand ΔF
-function localresponseuplot(w; umin=2.5, ustep=0.01, umax=6, rw=1, rα=2)
+function localresponseuplot(w; umin=2.5, ustep=0.01, umax=6, rw=1, rα=2, prefac_u=false)
     uu = (umin:ustep:umax)
     χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
     for u in uu
@@ -857,24 +860,35 @@ function localresponseuplot(w; umin=2.5, ustep=0.01, umax=6, rw=1, rα=2)
     χzθ[abs.(χzθ) .< ymin] .= ymin
     χzz[abs.(χzz) .< ymin] .= ymin
 
-    # Add prefactors in u
-    χrr = χrr .* .√(uu.^2 .- rα^2) ./ uu
-    χθθ = χθθ .* rα^2 ./ (uu.*.√(uu.^2 .- rα^2))
-    χzz = χzz .* uu ./ .√(uu.^2 .- rα^2)
+    labels = ["\$\\tilde{χ}_{diff}^{rr}\$",
+             "\$\\tilde{χ}_{diff}^{\\theta\\theta}\$",
+              "\$\\tilde{χ}_{diff}^{zz}\$"
+             ]
+
+    if prefac_u
+        # Add prefactors in u
+        χrr = χrr .* .√(uu.^2 .- rα^2) ./ uu
+        χθθ = χθθ .* rα^2 ./ (uu.*.√(uu.^2 .- rα^2))
+        χzz = χzz .* uu ./ .√(uu.^2 .- rα^2)
+
+        labels = labels .*  ["\$ \\frac{\\sqrt{u^2 - r_\\alpha^2}}{u}\$",
+                             "\$ \\frac{r_\\alpha^2}{u\\sqrt{u^2-r_\\alpha^2}}\$",
+                             "\$ \\frac{u}{\\sqrt{u^2-r_\\alpha^2}}\$"]
+    end # if
 
     χplot = plot(uu, abs.(χrr), 
-                   label="\$\\tilde{χ}_{diff}^{rr} \\frac{\\sqrt{u^2 - r_\\alpha^2}}{u}\$", yscale=:log10, xlabel="u", size=(800, 500))
+                 label=labels[1], yscale=:log10, xlabel="u", size=(800, 500), ylabel="\$ \\tilde{\\chi} \$ (w=$w i)")
     plot!(uu, abs.(χθθ), 
-          label="\$\\tilde{χ}_{diff}^{\\theta\\theta} \\frac{r_\\alpha^2}{u\\sqrt{u^2-r_\\alpha^2}}\$")
+          label=labels[2])
     plot!(uu, abs.(χzz), 
-          label="\$\\tilde{χ}_{diff}^{zz}\\frac{u}{\\sqrt{u^2-r_\\alpha^2}}\$")
+          label=labels[3])
     return χplot    
     #savefig("localresponseuplot.png")
 end # function localresponseuplot
 
 # Plots the local renormalized unitless response vs imaginary w for a given u
 # Now puts them all in one plot
-function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11, rw = 1)
+function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11, rw = 1, rα = 2, prefac_u=false)
     ww = im*(wmin:wstep:wmax)
     χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
     for w in ww
@@ -904,15 +918,40 @@ function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11, rw = 1)
     χzz[abs.(χzz) .< ymin] .= ymin
     ww = abs.(ww) # Fixes axis for plotting
 
-    χrrplot = plot(ww, abs.(χrr), 
-                   label="\$\\tilde{χ}_{diff}^{rr}\$", yscale=:log10, xlabel="w", size=(800, 500))
+    labels = ["\$\\tilde{χ}_{diff}^{rr}\$",
+             "\$\\tilde{χ}_{diff}^{\\theta\\theta}\$",
+              "\$\\tilde{χ}_{diff}^{zz}\$"
+             ]
+
+    if prefac_u
+        # Add prefactors in u
+        χrr = χrr .* .√(u.^2 .- rα^2) ./ u
+        χθθ = χθθ .* rα^2 ./ (u.*.√(u.^2 .- rα^2))
+        χzz = χzz .* u ./ .√(u.^2 .- rα^2)
+        labels = labels .*  ["\$ \\frac{\\sqrt{u^2 - r_\\alpha^2}}{u}\$",
+                             "\$ \\frac{r_\\alpha^2}{u\\sqrt{u^2-r_\\alpha^2}}\$",
+                             "\$ \\frac{u}{\\sqrt{u^2-r_\\alpha^2}}\$"]
+    end # if
+
+    χplot = plot(ww, abs.(χrr), 
+                 label=labels[1], yscale=:log10, xlabel="w", size=(800, 500), ylabel="\$ \\tilde{\\chi} \$ (u=$u)")
     plot!(ww, abs.(χθθ), 
-                   label="\$\\tilde{χ}_{diff}^{\\theta\\theta}\$")
+          label=labels[2])
     plot!(ww, abs.(χzz), 
-                   label="\$\\tilde{χ}_{diff}^{zz}\$")
+          label=labels[2])
+    return χplot
     #plot(χrrplot, χθθplot, χzzplot, layout=(3,1), yscale=:log10, xlabel="w", size=(800, 500), clims=(0,pi))
-    savefig("localresponseiwplot.png")
+    # savefig("localresponseiwplot.png")
 end # function localresponseiwplot
+
+# Draws both localresponseiwplot and localresponseuplot in one window
+function localresponseplots(u, w; wmin=0, wstep=0.1, wmax = 11, umin=2.5, ustep=0.01, umax = 6, 
+        prefac_u=false, rw=1, rα=2)
+    uplot = localresponseuplot(w, umin=umin, ustep=ustep, umax=umax, rw=rw, rα=rα, prefac_u=prefac_u)
+    iwplot = localresponseiwplot(u, wmin=wmin, wstep=wstep, wmax=wmax, rw=rw, rα=rα, prefac_u=prefac_u)
+    plot(uplot, iwplot, layout=(2, 1), size=(800, 500))
+    savefig("localresponseplots.png")
+end # function localresponseplots
 
 # Plots the local renormalized response vs imaginary ω for a given r
 # Also plots a Drude functional form 1/iω * 1/(iω-τ-1)
@@ -1425,7 +1464,47 @@ function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, m
         maxp = maxpq/rα*(abs(m)/pmscale + 1)
         maxu = rα*(maxuq/(umscale*abs(m) + 1) + 1)
 
-        int = hcubature(integ, (minw, rα+1e-12, -maxp), (maxw, maxu, maxp), rtol=rtol, atol=atol, initdiv=initdiv)
+        int = hcubature(integ, (minw, rα, -maxp), (maxw, maxu, maxp), rtol=rtol, atol=atol, initdiv=initdiv)
+        atol += rtol*abs(int[1])
+
+        mint = int[1]
+
+        inttot += int[1]
+
+        println("Integral for m=$m done, result is $(int[1]), atol is $atol")
+        m += 1
+    end
+    return (inttot, counter)
+end # function ΔEanyint
+
+# Integrates the trace of the environment response (conductivity) χ(ω), to estimate C. Overcomplicates things a bit by not sepearting p. The conductivity contains no
+# prefactor σ0, and takes w, τα as argument.
+function normestimate(rα; rtol=1e-2, maxuq=100.1, maxpq=40, initdiv=35, pmscale=6, umscale=4, atolscale=5, w=1e-15)
+    maxu = rα*(1 + maxuq)
+
+    counter = 0
+
+    atol = 0 # Current atol owing to previous integration
+    inttot = 0 # Total result
+
+    m = 0
+    mint = NaN # Total contribution from last m
+    while !(abs(mint) < atol/atolscale)
+        # The integrand, it appears parameters are evaluated at fcn call
+        function integ((u, p))
+            integ = imag(([1;; 1;; 1]*diffresponseunit(u, u, w, m, p, diagonal=true) *
+                          [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)])[1])
+            if isnan(integ)
+                println("NaN found for intega at w=$w, u=$u, p=$p")
+            end
+            counter += 1
+            return integ
+        end # function integ
+
+        maxp = maxpq/rα*(abs(m)/pmscale + 1)
+        maxu = rα*(maxuq/(umscale*abs(m) + 1) + 1)
+
+        int = hcubature(integ, (rα+1e-12, -maxp), (maxu, maxp), rtol=rtol, atol=atol, initdiv=initdiv)
         atol += rtol*abs(int[1])
 
         mint = int[1]
@@ -1780,5 +1859,12 @@ function mybessely(m, z)
         end
     end
 end # function mybesselj
+
+
+# Plots log(log(x^-1)) vs x
+function loglogplot(xmin=0.01, xstep=0.05, xmax=1)
+    xx = xmin:xstep:xmax
+    plot(xx, log.(xx.^-1), yscale=:log10)
+end # function loglogplot
 
 end # module MaterialLambShift

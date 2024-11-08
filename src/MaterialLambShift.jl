@@ -9,11 +9,16 @@ using QuadGK
 using Debugger
 using HCubature
 using LaTeXStrings
+using HDF5
+using JLD
+using FileIO
+using NPZ
 
 # For proper execution by pyjulia exported names must be ASCII #
 #                           :c                                 #
 
 # export dlayerresponse
+export savedata
 export loglogplot
 export savetofile_localresponse
 export savetofile_Edrudeint1
@@ -162,8 +167,9 @@ function dlayerresponse(r, θ, z, ω, m, k)
 end # function dlayerresponse
 
 # Plots dynamic response as a function of r
-function dlayerradialdynresponse(ω, m, k; rd=1, maxrq=2, maxrexp=1, stepr=0.001, minr=0.1)
-    maxr = rw*(1 + maxrq/(abs(m)+1))
+# Just returns the dataseries if puredata=true
+function dlayerradialdynresponse(ω, m, k; rd=1, maxr=2, maxrexp=1, stepr=0.001, minr=0.2, rw=0.1, puredata=false)
+    #maxr = rw*(1 + maxrq/(abs(m)+1))
     rr = minr:stepr:maxr # Range of r
     xrr, xrθ, xrz, xθr, xθθ, xθz, xzr, xzθ, xzz = [[] for _ in 1:9] # Dynamic solution
     drr, drθ, drz, dθr, dθθ, dθz, dzr, dzθ, dzz = [[] for _ in 1:9] # Difference solution
@@ -201,7 +207,8 @@ function dlayerradialdynresponse(ω, m, k; rd=1, maxrq=2, maxrexp=1, stepr=0.001
 
     for r in rr
         # Diffunit response #NOTE currently evaluates locally in u
-        χ = 1/(16*im*pi^2*rw^3)*diffresponseunit(r/rw, r/rw, ω*rw, m, k*rw)*rw 
+        #χ = 1/(16*im*pi^2*rw^3)*diffresponseunit(r/rw, r/rw, ω*rw, m, k*rw)*rw 
+        χ = diffresponseunit(r/rw, r/rw, ω*rw, m, k*rw)
         # Extra factor of rw because of integration measure
         push!(urr, χ[1, 1])
         push!(urθ, χ[1, 2])
@@ -289,6 +296,11 @@ function dlayerradialdynresponse(ω, m, k; rd=1, maxrq=2, maxrexp=1, stepr=0.001
 #    bzr[abs.(bzr) .< ymin] .= ymin
 #    bzθ[abs.(bzθ) .< ymin] .= ymin
 #    bzz[abs.(bzz) .< ymin] .= ymin
+
+
+    if puredata
+        return urr, urθ, urz, uθr, uθθ, uθz, uzr, uzθ, uzz, collect(rr)
+    end # if
 
     Errplot = plot()
     #plot!(rr, abs.(xrr), line_z=imag(log.(xrr)), label="χ^{rr}")
@@ -832,7 +844,7 @@ end # function localresponsewplot
 # Plots the local renormalized response vs w for a given r
 # Now puts them all in one plot
 # Currently carries the prefac. in u from the integrand ΔF
-function localresponseuplot(w; umin=2.5, ustep=0.01, umax=6, rw=1, rα=2, prefac_u=false)
+function localresponseuplot(w; umin=2.5, ustep=0.01, umax=6, rw=1, rα=2, prefac_u=false, puredata=false)
     uu = (umin:ustep:umax)
     χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
     for u in uu
@@ -876,8 +888,12 @@ function localresponseuplot(w; umin=2.5, ustep=0.01, umax=6, rw=1, rα=2, prefac
                              "\$ \\frac{u}{\\sqrt{u^2-r_\\alpha^2}}\$"]
     end # if
 
+    if puredata
+        return χrr, χθθ, χzz, uu
+    end # if
+
     χplot = plot(uu, abs.(χrr), 
-                 label=labels[1], yscale=:log10, xlabel="u", size=(800, 500), ylabel="\$ \\tilde{\\chi} \$ (w=$w i)")
+                 label=labels[1], yscale=:log10, xlabel="u", size=(800, 500), ylabel="\$ \\tilde{\\chi} \$ (w=$w i)", xlims=(umin, umax))
     plot!(uu, abs.(χθθ), 
           label=labels[2])
     plot!(uu, abs.(χzz), 
@@ -888,7 +904,7 @@ end # function localresponseuplot
 
 # Plots the local renormalized unitless response vs imaginary w for a given u
 # Now puts them all in one plot
-function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11, rw = 1, rα = 2, prefac_u=false)
+function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=3, rw = 1, rα = 2, prefac_u=false, puredata=false)
     ww = im*(wmin:wstep:wmax)
     χrr, χθr, χzr, χrθ, χθθ, χzθ, χrz, χθz, χzz = [[] for _ in 1:9]
     for w in ww
@@ -933,23 +949,30 @@ function localresponseiwplot(u; wmin=0, wstep=0.1, wmax=11, rw = 1, rα = 2, pre
                              "\$ \\frac{u}{\\sqrt{u^2-r_\\alpha^2}}\$"]
     end # if
 
+    if puredata
+        return χrr, χθθ, χzz, ww
+    end # if
+
     χplot = plot(ww, abs.(χrr), 
-                 label=labels[1], yscale=:log10, xlabel="w", size=(800, 500), ylabel="\$ \\tilde{\\chi} \$ (u=$u)")
+                 label=labels[1], yscale=:log10, xlabel="w", size=(800, 500), ylabel="\$ \\tilde{\\chi} \$ (u=$u)", xlims=(wmin, wmax))
     plot!(ww, abs.(χθθ), 
           label=labels[2])
     plot!(ww, abs.(χzz), 
-          label=labels[2])
+          label=labels[3])
     return χplot
     #plot(χrrplot, χθθplot, χzzplot, layout=(3,1), yscale=:log10, xlabel="w", size=(800, 500), clims=(0,pi))
     # savefig("localresponseiwplot.png")
 end # function localresponseiwplot
 
 # Draws both localresponseiwplot and localresponseuplot in one window
-function localresponseplots(u, w; wmin=0, wstep=0.1, wmax = 11, umin=2.5, ustep=0.01, umax = 6, 
+function localresponseplots(u, w; wmin=0, wstep=0.1, wmax = 3, umin=2.5, ustep=0.01, umax = 6, 
         prefac_u=false, rw=1, rα=2)
     uplot = localresponseuplot(w, umin=umin, ustep=ustep, umax=umax, rw=rw, rα=rα, prefac_u=prefac_u)
     iwplot = localresponseiwplot(u, wmin=wmin, wstep=wstep, wmax=wmax, rw=rw, rα=rα, prefac_u=prefac_u)
-    plot(uplot, iwplot, layout=(2, 1), size=(800, 500))
+    # ymax = maximum(uplot[1][:][:y], iwplot[1][:][:y])
+    ymax = max(ylims(uplot)[2], ylims(iwplot)[2])
+    ymin = min(ylims(uplot)[1], ylims(iwplot)[1])
+    plot(uplot, iwplot, layout=(2, 1), size=(500, 400), ylims=(ymin, ymax), dpi=600, legend=:outerbottomright, legend_title_font_pointssize=20)
     savefig("localresponseplots.png")
 end # function localresponseplots
 
@@ -1866,5 +1889,12 @@ function loglogplot(xmin=0.01, xstep=0.05, xmax=1)
     xx = xmin:xstep:xmax
     plot(xx, log.(xx.^-1), yscale=:log10)
 end # function loglogplot
+
+# Saves once nested array of complex numbers to a file readable by python
+function savedata(filename, data)
+datareduced = reduce(hcat, data)
+dataarray = convert(Array{ComplexF64}, datareduced)
+npzwrite(filename * ".npy", dataarray)
+end # function savedata
 
 end # module MaterialLambShift

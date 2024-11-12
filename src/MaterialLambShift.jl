@@ -1560,7 +1560,7 @@ function ΔEanyintMatsubara(rα, Tα, χ::Function, χpar; rtol=1e-2, maxuq=100.
 	    m += 1
     end # while
 
-    inttot = Tα*inttot # Normalize to compare with 0T integral
+    inttot = 2*π*Tα*inttot # Normalize to compare with 0T integral
     return (inttot, counter)
 end # function ΔEanyintMatsubara
 

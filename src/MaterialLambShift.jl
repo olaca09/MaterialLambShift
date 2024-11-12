@@ -48,6 +48,7 @@ export localresponseunit
 export asymptcheck
 export getν
 export ΔEanyint
+export ΔEanyintMatsubara
 export ΔEheatmap
 export χdrude
 export χconst
@@ -1499,6 +1500,69 @@ function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, m
     end
     return (inttot, counter)
 end # function ΔEanyint
+
+# Integrates the unitless energy shift along w, u, p, m, due
+# to some given polarizability anisotropy χ(ω). 
+# The polarizability contains no
+# prefactor δσ, and takes w, τα as
+# argument. The w direction is treated as the proper Matsubara sum
+# Here Ta is the reduced temperature
+function ΔEanyintMatsubara(rα, Tα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40,
+        maxwq=4, initdiv=35, pmscale=6, umscale=4, atolmscale=5, atolwscale=5e-1)
+    maxw = maxwq*rα^-1
+    minw = 2*π*Tα
+    ww = minw:2*π*Tα:maxw
+
+    maxu = rα*(1 + maxuq)
+
+    counter = 0
+
+    atol = 0 # Current atol owing to previous integration
+    inttot = 0 # Total result
+
+    m = 0
+    mint = NaN # Total contribution from last m
+    while !(abs(mint) < atol/atolmscale)
+        mint = 0 # Reset mint for loop over w
+        w =  2*π*Tα
+        wint = NaN # Total contribution from last w
+        while !(abs(wint) < atol*Tα/atolwscale)
+	        # The integrand, it appears parameters are evaluated at fcn call
+	        function integ((u, p))
+	            integ = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
+	                          [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] *
+	                          χ(im*w, χpar...))[1])
+	            if isnan(integ)
+	                println("NaN found for integ at w=$w, u=$u, p=$p")
+	            end
+	            counter += 1
+	            return integ
+	        end # function integ
+	
+	        maxp = maxpq/rα*(abs(m)/pmscale + 1)
+	        maxu = rα*(maxuq/(umscale*abs(m) + 1) + 1)
+	
+	        int = hcubature(integ, (rα, -maxp), (maxu, maxp), rtol=rtol, atol=atol, initdiv=initdiv)
+	
+	        wint = int[1]
+            atol += rtol*abs(wint)
+
+            # println("Integral for w=$w, m=$m done, result is $(wint), atol is $atol")
+
+            mint += wint
+
+            w += 2*π*Tα
+        end # while
+	    inttot += mint
+	    #atol += rtol*abs(mint) # Only increase atol once
+	
+        println("Integral for m=$m done, result is $(mint), atol is $atol")
+	    m += 1
+    end # while
+
+    inttot = Tα*inttot # Normalize to compare with 0T integral
+    return (inttot, counter)
+end # function ΔEanyintMatsubara
 
 # Integrates the trace of the environment response (conductivity) χ(ω), to estimate C. Overcomplicates things a bit by not sepearting p. The conductivity contains no
 # prefactor σ0, and takes w, τα as argument.

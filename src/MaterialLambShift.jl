@@ -13,6 +13,7 @@ using HDF5
 using JLD
 using FileIO
 using NPZ
+using ColorSchemes
 
 # For proper execution by pyjulia exported names must be ASCII #
 #                           :c                                 #
@@ -55,6 +56,7 @@ export χconst
 export χESplot
 export χdrudescreened
 export ΔEdrudeintegunitplot
+export ΔEdrudeanyintMatsubaraplot
 export ΔEdrudeintunit
 export mybesselj
 export normestimate
@@ -63,9 +65,9 @@ export normestimate
 # const rw::Float64 = 0.1 # Wire width, ls
 const iϵ::ComplexF64 = 1e-11im # Causality fixer
 
-# Returns tuple of Hankel function coordinates (αE, βE, γE, αB, βB, γB)
-# consistent with a fluctuating dipole at distance rd from the axis of
-# symmetry.
+"Returns tuple of Hankel function coordinates (αE, βE, γE, αB, βB, γB)
+consistent with a fluctuating dipole at distance rd from the axis of
+symmetry."
 function dlayerresponsecoef(ω, m, k, d; rd=1) 
     ν = √Complex(ω^2 - k^2)
     # Save Hankel fcn values
@@ -567,11 +569,11 @@ function dynamicresponse(r, r′, ω, m, k; verbatim=false, rw=1)
     end
 end # function dynamicresponse
 
-# Returns difference of dynamic wire and free response (Er, Eθ, Ez)^t * (dr,
-# dθ, dz) at distance u, u′, for w, m, p. Takes unitless arguments w, u, u', p
-# Adds causality fix iη by itself
-# Contains no common prefactor to the matrix, this has to be added
-# at a later stage
+"Returns difference of dynamic wire and free response (Er, Eθ, Ez)^t * (dr,
+dθ, dz) at distance u, u′, for w, m, p. Takes unitless arguments w, u, u', p
+Adds causality fix iη by itself
+Contains no common prefactor to the matrix, this has to be added
+at a later stage"
 function diffresponseunit(u, u′, w, m, p; diagonal=false, rw=1)
     # kcfac = 1e2 #factor to determine kc
     w = w + iϵ
@@ -1501,20 +1503,15 @@ function ΔEanyint(rα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40, m
     return (inttot, counter)
 end # function ΔEanyint
 
-# Integrates the unitless energy shift along w, u, p, m, due
-# to some given polarizability anisotropy χ(ω). 
-# The polarizability contains no
-# prefactor δσ, and takes w, τα as
-# argument. The w direction is treated as the proper Matsubara sum
-# Here Ta is the reduced temperature
-function ΔEanyintMatsubara(rα, Tα, χ::Function, χpar; rtol=1e-2, maxuq=100.1, maxpq=40,
-        maxwq=4, initdiv=35, pmscale=6, umscale=4, atolmscale=5, atolwscale=5e-1)
-    maxw = maxwq*rα^-1
+"Integrates the unitless energy shift along w, u, p, m, due
+to some given polarizability anisotropy χ(ω). 
+The polarizability contains no
+prefactor δσ, and takes w, τα as
+argument. The w direction is treated as the proper Matsubara sum
+Here Ta is the reduced temperature"
+function ΔEanyintMatsubara(rα, Tα, χ::Function, χpar; rtol=1e-2, maxuq=4, uwscale=1, umscale=1,
+        maxpq=10, pmscale=5e-2, pwscale=0.5, initdiv=35,  atolmscale=5, atolwscale=5e-1)
     minw = 2*π*Tα
-    ww = minw:2*π*Tα:maxw
-
-    maxu = rα*(1 + maxuq)
-
     counter = 0
 
     atol = 0 # Current atol owing to previous integration
@@ -1529,25 +1526,25 @@ function ΔEanyintMatsubara(rα, Tα, χ::Function, χpar; rtol=1e-2, maxuq=100.
         while !(abs(wint) < atol*Tα/atolwscale)
 	        # The integrand, it appears parameters are evaluated at fcn call
 	        function integ((u, p))
-	            integ = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
+	            integres = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
 	                          [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] *
 	                          χ(im*w, χpar...))[1])
-	            if isnan(integ)
+	            if isnan(integres)
 	                println("NaN found for integ at w=$w, u=$u, p=$p")
 	            end
 	            counter += 1
-	            return integ
+	            return integres
 	        end # function integ
 	
-	        maxp = maxpq/rα*(abs(m)/pmscale + 1)
-	        maxu = rα*(maxuq/(umscale*abs(m) + 1) + 1)
+            maxp = maxpq/(rα-1)*(abs(m)*pmscale + 1)*(w*pwscale + 1)
+            maxu = rα*(maxuq/((umscale*abs(m) + 1)*(uwscale*w + 1)) + 1)
 	
 	        int = hcubature(integ, (rα, -maxp), (maxu, maxp), rtol=rtol, atol=atol, initdiv=initdiv)
 	
 	        wint = int[1]
             atol += rtol*abs(wint)
 
-            # println("Integral for w=$w, m=$m done, result is $(wint), atol is $atol")
+            println("Integral for w=$w, m=$m done, result is $(2*π*Tα*wint), atol is $(2*π*Tα*atol)")
 
             mint += wint
 
@@ -1556,13 +1553,51 @@ function ΔEanyintMatsubara(rα, Tα, χ::Function, χpar; rtol=1e-2, maxuq=100.
 	    inttot += mint
 	    #atol += rtol*abs(mint) # Only increase atol once
 	
-        println("Integral for m=$m done, result is $(mint), atol is $atol")
+        println("Integral for m=$m done, result is $(2*π*Tα*mint), atol is $(2*π*Tα*atol)")
 	    m += 1
     end # while
 
     inttot = 2*π*Tα*inttot # Normalize to compare with 0T integral
     return (inttot, counter)
 end # function ΔEanyintMatsubara
+
+"Plots heatmap of abs of integrands to ΔEdrudeanyintMatsubara"
+function ΔEdrudeanyintMatsubaraplot(rα, Tα, w, m, χ::Function, χpar; rtol=1e-2, maxuq=4, 
+        maxpq=10, pmscale=5e-2, pwscale=0.5, umscale=1, uwscale=1, rescaleu=false)
+
+    maxu = rα*(maxuq/((umscale*abs(m) + 1)*(uwscale*w + 1)) + 1)
+    stepu = (maxu-rα)/100
+    uu = (rα+1e-11):stepu:maxu
+    maxp = maxpq/(rα-1)*(abs(m)*pmscale + 1)*(w*pwscale + 1)
+    stepp = maxp/100
+    pp = -maxp:stepp:maxp
+
+    ugrid = ones(length(pp)) *uu'
+    pgrid = pp * ones(length(uu))'
+
+    function integ(u, p)
+        integres = imag(([1;; 1;; -1]*diffresponseunit(u, u, im*w, m, p, diagonal=true) *
+                      [sqrt(u^2-rα^2)/u; rα^2/(u*sqrt(u^2-rα^2)); u/sqrt(u^2-rα^2)] *
+                      χ(im*w, χpar...))[1])
+        if isnan(integres)
+            println("NaN found for integ at w=$w, u=$u, p=$p")
+        end
+        if rescaleu
+            integres = integres*(u - rα)^(1/2)
+        end # if rescaleu
+        return integres
+    end # function integ
+
+    #resgrid = [integ(u, p) for (u, p) in zip(ugrid, pgrid)],
+    resgrid = 2*π*Tα*(integ.(ugrid, pgrid))
+    # Remove NaNs from resgrid
+    resgrid[isnan.(resgrid)] .= 0
+    resultmax = maximum(abs.(resgrid))
+    plot(uu, pp, resgrid, seriestype=:heatmap, xlabel="u", ylabel="p", seriescolor=:balance,
+         clims=(-resultmax, resultmax), size=(800,800))
+    savefig("ΔEdrudeanyintMatsubaraplot.png")
+    gui()
+end # function Δdrudeintegunitplot
 
 # Integrates the trace of the environment response (conductivity) χ(ω), to estimate C. Overcomplicates things a bit by not sepearting p. The conductivity contains no
 # prefactor σ0, and takes w, τα as argument.
@@ -1935,8 +1970,8 @@ function mybesselj(m, z)
     end
 end # function mybesselj
 
-# Wrapper for bessely returning zero for too large arguments
-# Should only be paired with something going to 0 faster than bessely
+"Wrapper for bessely returning zero for too large arguments
+Should only be paired with something going to 0 faster than bessely"
 function mybessely(m, z)
     try 
         return bessely(m, z)
@@ -1954,7 +1989,7 @@ function loglogplot(xmin=0.01, xstep=0.05, xmax=1)
     plot(xx, log.(xx.^-1), yscale=:log10)
 end # function loglogplot
 
-# Saves once nested array of complex numbers to a file readable by python
+"Saves once nested array of complex numbers to a file readable by python"
 function savedata(filename, data)
 datareduced = reduce(hcat, data)
 dataarray = convert(Array{ComplexF64}, datareduced)

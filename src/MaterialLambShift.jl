@@ -14,7 +14,12 @@ using JLD
 using FileIO
 using NPZ
 using ColorSchemes
+using PhysicalConstants.CODATA2018: ħ, k_B, c_0
+using Unitful
+using Symbolics
 
+# Code for Birefringent plate calculations
+include("BirefringentPlates.jl")
 # For proper execution by pyjulia exported names must be ASCII #
 #                           :c                                 #
 

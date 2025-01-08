@@ -8,14 +8,14 @@ using StaticArrays
 using QuadGK
 using Debugger
 using HCubature
+using Trapz
 using LaTeXStrings
-using HDF5
-using JLD
 using FileIO
 using NPZ
 using ColorSchemes
 using PhysicalConstants.CODATA2018: ħ, k_B, c_0
 using Unitful
+using Printf
 using Symbolics
 
 # Code for Birefringent plate calculations

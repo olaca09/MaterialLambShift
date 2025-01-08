@@ -101,7 +101,7 @@ end # function papperϵplot
     ρ1 = (r^2 + c^-2*ξ^2*ϵ1⊥ξ)^(1/2)
     ρ2 = (r^2 + c^-2*ξ^2*ϵ2⊥ξ)^(1/2)
     ρ3 = (r^2 + c^-2*ξ^2*ϵ3ξ)^(1/2)
-    ρ̃1 = (r^2 + (ϵ1IIξ/ϵ1⊥ξ - 1)r^2 * cosϕ^2 + c^-2*ξ^2*ϵ1IIξ)^(1/2)
+    ρ̃1 = (r^2 + (ϵ1IIξ/ϵ1⊥ξ - 1)*r^2 * cosϕ^2 + c^-2*ξ^2*ϵ1IIξ)^(1/2)
     ρ̃2 = (r^2 + (ϵ2IIξ/ϵ2⊥ξ - 1)*(r*cosϕ*cos(θ) - r*sinϕ*sin(θ))^2
           + c^-2*ξ^2*ϵ2IIξ)^(1/2)
 
@@ -175,10 +175,12 @@ end # function papperϵplot
                          )
                        )
            )
+    rlnD = r*log(D)
     lnD = log(D)
 
     # Define derivative of lnD with respect to θ
     ∂θ = Differential(θ)
+    r∂lnD∂θ = expand_derivatives(∂θ(rlnD))
     ∂lnD∂θ = expand_derivatives(∂θ(lnD))
 
     # Build Julia function for ∂lnD∂θ
@@ -186,8 +188,14 @@ end # function papperϵplot
 #        return build_function(∂lnD∂θ, θ, r, ϕ, ξ, par1II, par1⊥, par2II, par2⊥, d, c,
 #                              expression = Val{false})
 #    end # function ∂lnD∂θfn
-    ∂lnD∂θfn = eval(build_function(∂lnD∂θ, θ, r, ϕ, ξ, par1II, par1⊥, par2II, par2⊥, d, c,
-                                   expression = Val{true}))
+    r∂lnD∂θexpr = build_function(r∂lnD∂θ, θ, r, ϕ, ξ, par1II, par1⊥, par2II, par2⊥, d, c,
+                                   expression = Val{true})
+    r∂lnD∂θfn = build_function(r∂lnD∂θ, θ, r, ϕ, ξ, par1II, par1⊥, par2II, par2⊥, d, c,
+                                   expression = Val{false})
+    ∂lnD∂θexpr = build_function(∂lnD∂θ, θ, r, ϕ, ξ, par1II, par1⊥, par2II, par2⊥, d, c,
+                                expression = Val{true})
+    ∂lnD∂θfn = build_function(∂lnD∂θ, θ, r, ϕ, ξ, par1II, par1⊥, par2II, par2⊥, d, c,
+                                expression = Val{false})
 
 
     #println(expand_derivatives(∂lnD∂θ))
@@ -200,36 +208,85 @@ end # function papperϵplot
 #    println("∂lnD∂θ = $(substitute(∂lnD∂θ, valuedict))")
 #
 "Returns the torque per unit area of the two-plate system with dielectric functions 
-ϵ1II(ξ), ϵ1⊥(ξ), ϵ2II(ξ) and ϵ2⊥(ξ), ϵ3(ξ), separation dval, principal axes angle θval and temperature T"
-function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 1e10u"m^-1", rtol = 1e-2)
+ϵ1II(ξ), ϵ1⊥(ξ), ϵ2II(ξ) and ϵ2⊥(ξ), ϵ3(ξ), separation dval, principal axes angle θval and temperature T. Uses a trapeziodal rule if trapz=true"
+function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 1e10u"m^-1", rtol = 1e-2, atolunitful=1e-19u"J*m^-2", usetrapz=false, trapzrdiv=100, trapzϕdiv=100)
     # r is the transverse wavenumber
 
     if !(typeof(T) <: Unitful.Temperature)
         T = T*u"K"
         println("Temperature was not given in temperature Unitful type, assuming Kelvin")
-    end # if
+        end # if
+
+    atol = ustrip(u"m^-2", atolunitful/(k_B*T/(4*π^2)))
 
     # Matsubara sum #
-    M = 0
-    Merror = 0
+    M = 0u"J*m^-2"
+    Merror = 0u"J*m^-2"
     ξn = 0u"Hz2π"
+    #ξn = uconvert(u"Hz2π", k_B*T/ħ)
+
+
+    rcutoffnounit = ustrip(u"m^-1", rcutoff) # Strip units for hcubature,
+    #has to match inserted length unit below
 
     while ξn < ξcutoff
 #        integ = rϕ -> rϕ[1] * substitute(∂lnD∂θ, Dict([θ => θval, r => rϕ[1]*u"m^-1", ϕ => rϕ[2], 
 #                                                    ξ => ξn, par1II => calciteII, 
 #                                                    par1⊥ => calcite⊥, par2II => BaTiO3II,
 #                                                    par2⊥ => BaTiO3⊥, d => dval, c => c_0]))
-    function integ(rϕ)
-        #println("Calculating torque for r = $(rϕ[1]), ξ=$ξn, and ϕ = $(rϕ[2])")
-        return rϕ[1] * ∂lnD∂θfn(θval, rϕ[1]*u"m^-1", rϕ[2], ξn, calciteII, calcite⊥,
-                                        BaTiO3II, BaTiO3⊥, dval, c_0)
-    end # function integ
-        rcutoff = ustrip(u"m^-1", rcutoff) # Strip units for hcubature
+        function integtrapz(r, ϕ)
+            #println("Calculating torque for r = $(rϕ[1]), ξ=$ξn, and ϕ = $(rϕ[2])")
+            integrandval = ∂lnD∂θfn(θval, r, ϕ, ξn, calciteII, calcite⊥,
+                                             BaTiO3II, BaTiO3⊥, dval, c_0)
+            yield() # Lousy attempt to allow for interruption
+            if isnan(integrandval)
+                println("NaN at r = $(r), ξ=$ξn, and ϕ = $(ϕ)")
+                throw(ErrorException("NaN at r = $(r), ξ=$ξn, and ϕ = $(ϕ)"))
+            end # if
+            return integrandval
+        end # function integ
+
+            function integ(rϕ)
+            #println("Calculating torque for r = $(rϕ[1]), ξ=$ξn, and ϕ = $(rϕ[2])")
+            integrandval = r∂lnD∂θfn(θval, rϕ[1]*u"m^-1", rϕ[2], ξn, calciteII, calcite⊥,
+                                             BaTiO3II, BaTiO3⊥, dval, c_0)
+            yield() # Lousy attempt to allow for interruption
+            if isnan(integrandval)
+                println("NaN at r = $(rϕ[1]), ξ=$ξn, and ϕ = $(rϕ[2])")
+                throw(ErrorException("NaN at r = $(rϕ[1]), ξ=$ξn, and ϕ = $(rϕ[2])"))
+            end # if
+            return ustrip(u"m^-1", integrandval)
+        end # function integ
 
         # Split integration into two domains in ϕ, to avoid divisions by zero
         # at sin(ϕ) = ± 1
-        M, Merror += k_B*T/(4*π^2) * hcubature(integ, (0, -π/2), (rcutoff, π/2), rtol=rtol)*u"m^-2"
-        M, Merror += k_B*T/(4*π^2) * hcubature(integ, (0, π/2), (rcutoff, 3π/2), rtol=rtol)*u"m^-2"
+        if usetrapz
+            η = 1e-5u"m^-1"
+            rr = range(η, rcutoff, length=trapzrdiv)
+            ϕϕ = range(0, 2π, length=trapzϕdiv)
+            mm = [integtrapz(r, ϕ) for r in rr, ϕ in ϕϕ] # Lacks prefactor, also r dr missing
+            phiint = uconvert(u"aJ", k_B*T/(4*π^2)) * trapz(ϕϕ, mm, Val(2))
+            phiint[phiint .< 1e-5u"aJ"] .= 0u"aJ"
+            #phiint = phiint .* rr # Add factor r
+            return stack((reverse(phiint), reverse(rr)))
+            #M += k_B*T/(4*π^2) * trapz((rr, ϕϕ), mm)
+        else
+            Marray = (k_B*T/(4*π^2) .* hcubature(integ, (0, -π/2), (rcutoffnounit, π/2), rtol=rtol)
+                                                 #atol=atol)
+                      .*u"m^-2")
+            M += Marray[1]
+            Merror += Marray[2]
+            Marray = (k_B*T/(4*π^2) .* hcubature(integ, (0, π/2), (rcutoffnounit, 3π/2), rtol=rtol)
+                                                 #atol=atol)
+                      .*u"m^-2")
+            M += Marray[1]
+            Merror += Marray[2]
+        end # if
+#        Marray = (k_B*T/(4*π^2) .* hcubature(integ, (0, π/2), (rcutoff, 3π/2), rtol=rtol)
+#                                             #atol=atol)
+#                  .*u"m^-2")
+#        M += Marray[1]
+#        Merror += Marray[2]
         # Unit of r dr is missing
 
         if ξn == 0 # Halve first term
@@ -240,7 +297,8 @@ function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 1e10u"m^-1
         ξn += uconvert(u"Hz2π", k_B*T/ħ)
     end # while
 
-end # function twoplateΩ
+    return M
+end # function twoplateM
 
 "Returns the free energy per unit area of the two-plate system with dielectric functions 
 ϵ1II(ξ), ϵ1⊥(ξ), ϵ2II(ξ) and ϵ2⊥(ξ), ϵ3(ξ), separation d, principal axes angle θ and temperature T"
@@ -398,19 +456,61 @@ function twoplateΩ(ϵ1II, ϵ1⊥, ϵ2II, ϵ2⊥, ϵ3, d, θ, T; ξcutoff = 1e18
 
 end # function twoplateΩ
 
-"Plots the torque contribution for twoplateM, over r and ϕ for a given ξ"
-function Mplot(ξ, par1II, par1⊥, par2II, par2⊥, dval, θval; rmin = -4, rmax=15, ϕmin=0, ϕmax=2π, ϕstep=0.1, rstep=0.5)
-    rrange = (10 .^ (rmin:rstep:rmax))u"m^-1"
+"Plots the torque contribution for twoplateM, over r and ϕ for a given ξ. If rfac is true,
+the integration measure factor r is included."
+function Mplot(T, ξ, par1II, par1⊥, par2II, par2⊥, dval, θval; rmin = -4, rmax=15, ϕmin=0, ϕmax=2π, ϕstep=0.1, rstep=0.5, rfac=true)
+    rrange = (10. .^ (rmin:rstep:rmax))u"m^-1"
     ϕrange = ϕmin:ϕstep:ϕmax
     MM = zeros(length(rrange), length(ϕrange))
+    if rfac
+        MM = MM .* u"m^-1"
+    end # if
     for i in 1:length(rrange)
         for j in 1:length(ϕrange)
-            MM[i, j] = ∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, c_0)
+            try
+                if rfac
+                    MM[i, j] = r∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, c_0)
+                else
+                    MM[i, j] = ∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, c_0)
+                end # if
+            catch e
+                println("Error at r = $(rrange[i]) and ϕ = $(ϕrange[j])")
+                rethrow()
+            end # try
         end # for
     end # for
 
-    heatmap(ϕrange, rrange, MM, xlabel="ϕ", ylabel="r", title="∂lnD∂θ(r, ϕ) for ξ = $ξ",
-           yscale=:log10)
+    MM = MM.* (k_B*T/(4*π^2)) # Now adds prefactor, such that the integral can be estimated 
+                          # directly from the plot
+
+    if rfac
+        title = "k_B T/4π² r∂lnD∂θ(r, ϕ) for ξ = $ξ"
+    else
+        title = "k_B T/4π² ∂lnD∂θ(r, ϕ) for ξ = $ξ"
+    end # if
+
+    ## Set the unit to something reasonable, so that low valued don't mess with
+    #the heatmap etc
+    
+    if rfac
+        MM = uconvert.(u"aJ*m^-1", MM)
+    else
+        MM = uconvert.(u"aJ", MM)
+    end # if
+    Mmax = maximum(MM)
+    Mmin = minimum(MM)
+    println("Mmax = $Mmax, Mmin = $Mmin")
+    #Mstep = (Mmax - Mmin)/5
+    #colorbar_ticks=(collect(Mmax:Mstep:Mmin), Printf.format.(Ref(Printf.format"%.3E"), Mmax:Mstep:Mmin))
+    #println(colorbar_ticks)
+    
+    l = @layout [a{0.98h} ; b]
+    p = heatmap(ϕrange, rrange, MM, xlabel="ϕ", ylabel="r", title=title,
+            yscale=:log10)
+    p2 = plot(axis=([], false))
+    ftr = text("θ=$θval, d=$dval, ϕstep=$ϕstep, rstep=$rstep", :black, :right, 8)
+    annotate!(1, 0.5, ftr)
+    plot(p, p2, layout=l)
 end # function Mplot
 "Plots the argument to the logarithm for twoplateΩ, D, over r and ϕ for a given ξ"
 function Dplot(ξ, ϵ1II, ϵ1⊥, ϵ2II, ϵ2⊥, ϵ3, d, θ; rmin = -4, rmax=15, ϕmin=0, ϕmax=2π)

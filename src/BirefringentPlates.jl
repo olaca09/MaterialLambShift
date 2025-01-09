@@ -85,91 +85,105 @@ end # function papperϵplot
 
 
     # Definitions of integrand and parts thereof
-
+    
     # The dielectric functions at ξ
-    ϵ1IIξ = ϵ2osc(ξ, par1II)
-    ϵ1⊥ξ = ϵ2osc(ξ, par1⊥)
-    ϵ2IIξ = ϵ2osc(ξ, par2II)
-    ϵ2⊥ξ = ϵ2osc(ξ, par2⊥)
-    ϵ3ξ = ϵ0(ξ)
+    @register_symbolic ϵ1II(ξ, par1II)
+    @register_symbolic ϵ1⊥(ξ, par1⊥)
+    @register_symbolic ϵ2II(ξ, par2II)
+    @register_symbolic ϵ2⊥(ξ, par2⊥)
+    @register_symbolic ϵ3(ξ)
+
+    ϵ1II(ξ, par1II) = ϵ2osc(ξ, par1II)
+    ϵ1⊥(ξ, par1⊥) = ϵ2osc(ξ, par1⊥)
+    ϵ2II(ξ, par2II) = ϵ2osc(ξ, par2II)
+    ϵ2⊥(ξ, par2⊥) = ϵ2osc(ξ, par2⊥)
+    ϵ3(ξ) = ϵ0(ξ)
 
     # Store trig values for ϕ
     sinϕ = sin(ϕ)
     cosϕ = cos(ϕ)
 
     # Wave numbers in the z direction
-    ρ1 = (r^2 + c^-2*ξ^2*ϵ1⊥ξ)^(1/2)
-    ρ2 = (r^2 + c^-2*ξ^2*ϵ2⊥ξ)^(1/2)
-    ρ3 = (r^2 + c^-2*ξ^2*ϵ3ξ)^(1/2)
-    ρ̃1 = (r^2 + (ϵ1IIξ/ϵ1⊥ξ - 1)*r^2 * cosϕ^2 + c^-2*ξ^2*ϵ1IIξ)^(1/2)
-    ρ̃2 = (r^2 + (ϵ2IIξ/ϵ2⊥ξ - 1)*(r*cosϕ*cos(θ) - r*sinϕ*sin(θ))^2
-          + c^-2*ξ^2*ϵ2IIξ)^(1/2)
+
+    @register_symbolic ρ1(r, ξ, c, par1⊥)
+    @register_symbolic ρ2(r, ξ, c, par2⊥)
+    @register_symbolic ρ3(r, ξ, c)
+    @register_symbolic ρ̃1(r, ξ, c, par1II, par1⊥)
+    @register_symbolic ρ̃2(r, ξ, c, par2II, par2⊥)
+
+    # Derivatives of ρ would need to be defined separately, if later needed
+
+    ρ1(r, ξ, c, par1⊥) = (r^2 + c^-2*ξ^2*ϵ1⊥(ξ, par1⊥))^(1/2)
+    ρ2(r, ξ, c, par2⊥) = (r^2 + c^-2*ξ^2*ϵ2⊥(ξ, par2⊥))^(1/2)
+    ρ3(r, ξ, c) = (r^2 + c^-2*ξ^2*ϵ3(ξ))^(1/2)
+    ρ̃1(r, ξ, c, par1II, par1⊥) = (r^2 + (ϵ1II(ξ,par1II)/ϵ1⊥(ξ, par1⊥) - 1)*r^2 * cosϕ^2 + c^-2*ξ^2*ϵ1II(ξ,par1II))^(1/2)
+    ρ̃2(r, ξ, c, par2II, par2⊥) = (r^2 + (ϵ2II(ξ,par2II)/ϵ2⊥(ξ, par2⊥) - 1)*(r*cosϕ*cos(θ) - r*sinϕ*sin(θ))^2 + c^-2*ξ^2*ϵ2II(ξ,par2II))^(1/2)
 
     # Gruesome algebraic expressions
     γ = (
-         (ρ1+ρ3) * (ρ2+ρ3) * (
-                             (ϵ3ξ*ρ1+ϵ1⊥ξ*ρ3) - ϵ1⊥ξ*(ρ̃1-ρ1)*(r^2*sinϕ^2-ρ1*ρ3)
-                             /(ρ1^2-r^2*sinϕ^2)
+         (ρ1(r,ξ,c,par1⊥)+ρ3(r,ξ,c)) * (ρ2(r,ξ,c,par2⊥)+ρ3(r,ξ,c)) * (
+                             (ϵ3(ξ)*ρ1(r,ξ,c,par1⊥)+ϵ1⊥(ξ, par1⊥)*ρ3(r,ξ,c)) - ϵ1⊥(ξ, par1⊥)*(ρ̃1(r,ξ,c,par1II,par1⊥)-ρ1(r,ξ,c,par1⊥))*(r^2*sinϕ^2-ρ1(r,ξ,c,par1⊥)*ρ3(r,ξ,c))
+                             /(ρ1(r,ξ,c,par1⊥)^2-r^2*sinϕ^2)
                             )
         *(
-          (ϵ3ξ*ρ2+ϵ2⊥ξ*ρ3) - ϵ2⊥ξ*(ρ̃2-ρ2) * ((r*cosϕ*sin(θ)+r*sinϕ*cos(θ))^2-ρ2*ρ3)
-          /(ρ2^2 - (r*cosϕ*sin(θ)+r*sinϕ*cos(θ))^2)
+          (ϵ3(ξ)*ρ2(r,ξ,c,par2⊥)+ϵ2⊥(ξ, par2⊥)*ρ3(r,ξ,c)) - ϵ2⊥(ξ, par2⊥)*(ρ̃2(r,ξ,c,par2II,par2⊥)-ρ2(r,ξ,c,par2⊥)) * ((r*cosϕ*sin(θ)+r*sinϕ*cos(θ))^2-ρ2(r,ξ,c,par2⊥)*ρ3(r,ξ,c))
+          /(ρ2(r,ξ,c,par2⊥)^2 - (r*cosϕ*sin(θ)+r*sinϕ*cos(θ))^2)
          )
        )
 
     A = (
          (
-         (ρ1+ρ3)*(ρ2+ρ3) - (ρ1-ρ3)*(ρ2-ρ3)*exp(-2ρ3*d)
+         (ρ1(r,ξ,c,par1⊥)+ρ3(r,ξ,c))*(ρ2(r,ξ,c,par2⊥)+ρ3(r,ξ,c)) - (ρ1(r,ξ,c,par1⊥)-ρ3(r,ξ,c))*(ρ2(r,ξ,c,par2⊥)-ρ3(r,ξ,c))*exp(-2ρ3(r,ξ,c)*d)
          )
         *(
-          (ϵ3ξ*ρ1+ϵ1⊥ξ*ρ3)*(ϵ3ξ*ρ2+ϵ2⊥ξ*ρ3) - (ϵ3ξ*ρ1-ϵ1⊥ξ*ρ3)*(ϵ3ξ*ρ2-ϵ2⊥ξ*ρ3)*exp(-2ρ3*d)
+          (ϵ3(ξ)*ρ1(r,ξ,c,par1⊥)+ϵ1⊥(ξ, par1⊥)*ρ3(r,ξ,c))*(ϵ3(ξ)*ρ2(r,ξ,c,par2⊥)+ϵ2⊥(ξ, par2⊥)*ρ3(r,ξ,c)) - (ϵ3(ξ)*ρ1(r,ξ,c,par1⊥)-ϵ1⊥(ξ, par1⊥)*ρ3(r,ξ,c))*(ϵ3(ξ)*ρ2(r,ξ,c,par2⊥)-ϵ2⊥(ξ, par2⊥)*ρ3(r,ξ,c))*exp(-2ρ3(r,ξ,c)*d)
         )
-        - (ρ̃1-ρ1)*ϵ1⊥ξ/(ρ1^2-r^2*sinϕ^2)
+        - (ρ̃1(r,ξ,c,par1II,par1⊥)-ρ1(r,ξ,c,par1⊥))*ϵ1⊥(ξ, par1⊥)/(ρ1(r,ξ,c,par1⊥)^2-r^2*sinϕ^2)
         *(
-          (r^2*sinϕ^2 - ρ1*ρ3)*(ϵ3ξ*ρ2+ϵ2⊥ξ*ρ3) * (ρ2+ρ3) * (ρ1+ρ3)
-          + 2*(ϵ2⊥ξ-ϵ3ξ)*(
-                          r^2*sinϕ^2 * (r^2*ρ1-ρ2*ρ3^2) 
-                          + ρ1*ρ3^2*(r^2 - 2*r^2*sinϕ^2 + ρ1*ρ2)
+          (r^2*sinϕ^2 - ρ1(r,ξ,c,par1⊥)*ρ3(r,ξ,c))*(ϵ3(ξ)*ρ2(r,ξ,c,par2⊥)+ϵ2⊥(ξ, par2⊥)*ρ3(r,ξ,c)) * (ρ2(r,ξ,c,par2⊥)+ρ3(r,ξ,c)) * (ρ1(r,ξ,c,par1⊥)+ρ3(r,ξ,c))
+          + 2*(ϵ2⊥(ξ, par2⊥)-ϵ3(ξ))*(
+                          r^2*sinϕ^2 * (r^2*ρ1(r,ξ,c,par1⊥)-ρ2(r,ξ,c,par2⊥)*ρ3(r,ξ,c)^2) 
+                          + ρ1(r,ξ,c,par1⊥)*ρ3(r,ξ,c)^2*(r^2 - 2*r^2*sinϕ^2 + ρ1(r,ξ,c,par1⊥)*ρ2(r,ξ,c,par2⊥))
                          )
-          * exp(-2ρ3*d) + (r^2*sinϕ^2+ρ1*ρ3)*(ϵ3ξ*ρ2-ϵ2⊥ξ*ρ3)
-          * (ρ1-ρ3) * (ρ2-ρ3) * exp(-4ρ3*d)
+          * exp(-2ρ3(r,ξ,c)*d) + (r^2*sinϕ^2+ρ1(r,ξ,c,par1⊥)*ρ3(r,ξ,c))*(ϵ3(ξ)*ρ2(r,ξ,c,par2⊥)-ϵ2⊥(ξ, par2⊥)*ρ3(r,ξ,c))
+          * (ρ1(r,ξ,c,par1⊥)-ρ3(r,ξ,c)) * (ρ2(r,ξ,c,par2⊥)-ρ3(r,ξ,c)) * exp(-4ρ3(r,ξ,c)*d)
         )
        )
     
     B = (
-         (ϵ3ξ*ρ1+ϵ1⊥ξ*ρ3) * (ρ1+ρ3) * (ρ2+ρ3) + 2*(ϵ1⊥ξ-ϵ3ξ) * (r^2*ρ2-ρ1*ρ3^2-2*ρ2*ρ3^2)
-         * exp(-2*ρ3*d) + (ϵ3ξ*ρ1-ϵ1⊥ξ*ρ3) * (ρ1-ρ3) * (ρ2-ρ3) * exp(-4*ρ3*d)
+         (ϵ3(ξ)*ρ1(r,ξ,c,par1⊥)+ϵ1⊥(ξ, par1⊥)*ρ3(r,ξ,c)) * (ρ1(r,ξ,c,par1⊥)+ρ3(r,ξ,c)) * (ρ2(r,ξ,c,par2⊥)+ρ3(r,ξ,c)) + 2*(ϵ1⊥(ξ, par1⊥)-ϵ3(ξ)) * (r^2*ρ2(r,ξ,c,par2⊥)-ρ1(r,ξ,c,par1⊥)*ρ3(r,ξ,c)^2-2*ρ2(r,ξ,c,par2⊥)*ρ3(r,ξ,c)^2)
+         * exp(-2*ρ3(r,ξ,c)*d) + (ϵ3(ξ)*ρ1(r,ξ,c,par1⊥)-ϵ1⊥(ξ, par1⊥)*ρ3(r,ξ,c)) * (ρ1(r,ξ,c,par1⊥)-ρ3(r,ξ,c)) * (ρ2(r,ξ,c,par2⊥)-ρ3(r,ξ,c)) * exp(-4*ρ3(r,ξ,c)*d)
         )
-        + (ρ̃1+ρ1)*ϵ1⊥ξ/(ρ1^2-r^2*sinϕ^2)
+        + (ρ̃1(r,ξ,c,par1II,par1⊥)+ρ1(r,ξ,c,par1⊥))*ϵ1⊥(ξ, par1⊥)/(ρ1(r,ξ,c,par1⊥)^2-r^2*sinϕ^2)
         *(
-          -1*(r^2*sinϕ^2-ρ1*ρ3) * (ρ1+ρ3)*(ρ2+ρ3) + 2*(
-                                                         r^2*sinϕ^2 *(ρ1*ρ2+ρ3^2)
-                                                         - ρ1^2*ρ3^2 + ρ1*ρ2*ρ3^2
-                                                        ) * exp(-2*ρ3*d)
-          - (r^2*sinϕ^2+ρ1*ρ3) * (ρ1-ρ3) * (ρ2-ρ3) * exp(-4*ρ3*d)
+          -1*(r^2*sinϕ^2-ρ1(r,ξ,c,par1⊥)*ρ3(r,ξ,c)) * (ρ1(r,ξ,c,par1⊥)+ρ3(r,ξ,c))*(ρ2(r,ξ,c,par2⊥)+ρ3(r,ξ,c)) + 2*(
+                                                         r^2*sinϕ^2 *(ρ1(r,ξ,c,par1⊥)*ρ2(r,ξ,c,par2⊥)+ρ3(r,ξ,c)^2)
+                                                         - ρ1(r,ξ,c,par1⊥)^2*ρ3(r,ξ,c)^2 + ρ1(r,ξ,c,par1⊥)*ρ2(r,ξ,c,par2⊥)*ρ3(r,ξ,c)^2
+                                                        ) * exp(-2*ρ3(r,ξ,c)*d)
+          - (r^2*sinϕ^2+ρ1(r,ξ,c,par1⊥)*ρ3(r,ξ,c)) * (ρ1(r,ξ,c,par1⊥)-ρ3(r,ξ,c)) * (ρ2(r,ξ,c,par2⊥)-ρ3(r,ξ,c)) * exp(-4*ρ3(r,ξ,c)*d)
          )
 
-    C = (ρ2*ρ3*(
-               -1*(ϵ3ξ*ρ1+ϵ1⊥ξ*ρ3) * (ρ1+ρ3) * (ρ2+ρ3) + 2*ρ3*(ϵ1⊥ξ-ϵ3ξ)
-               * (r^2+ρ1*ρ2) * exp(-2*ρ3*d) + (ϵ3ξ*ρ1-ϵ1⊥ξ*ρ3) * (ρ1-ρ3)
-               * (ρ2-ρ3) * exp(-4*ρ3*d)
+    C = (ρ2(r,ξ,c,par2⊥)*ρ3(r,ξ,c)*(
+               -1*(ϵ3(ξ)*ρ1(r,ξ,c,par1⊥)+ϵ1⊥(ξ, par1⊥)*ρ3(r,ξ,c)) * (ρ1(r,ξ,c,par1⊥)+ρ3(r,ξ,c)) * (ρ2(r,ξ,c,par2⊥)+ρ3(r,ξ,c)) + 2*ρ3(r,ξ,c)*(ϵ1⊥(ξ, par1⊥)-ϵ3(ξ))
+               * (r^2+ρ1(r,ξ,c,par1⊥)*ρ2(r,ξ,c,par2⊥)) * exp(-2*ρ3(r,ξ,c)*d) + (ϵ3(ξ)*ρ1(r,ξ,c,par1⊥)-ϵ1⊥(ξ, par1⊥)*ρ3(r,ξ,c)) * (ρ1(r,ξ,c,par1⊥)-ρ3(r,ξ,c))
+               * (ρ2(r,ξ,c,par2⊥)-ρ3(r,ξ,c)) * exp(-4*ρ3(r,ξ,c)*d)
               )
-    + (ρ̃1-ρ1)*ϵ1⊥ξ/(ρ1^2-r^2*sinϕ^2)*ρ2*ρ3
+    + (ρ̃1(r,ξ,c,par1II,par1⊥)-ρ1(r,ξ,c,par1⊥))*ϵ1⊥(ξ, par1⊥)/(ρ1(r,ξ,c,par1⊥)^2-r^2*sinϕ^2)*ρ2(r,ξ,c,par2⊥)*ρ3(r,ξ,c)
     *(
-      (r^2*sinϕ^2-ρ1*ρ3) * (ρ1+ρ3) * (ρ2+ρ3)
-      + 2*ρ3*(
-              ρ1^2*ρ2 + ρ1*ρ3^2 + r^2*sinϕ^2 * (ρ1-ρ2)
-             ) * exp(-2*ρ3*d)
-      - (r^2*sinϕ^2+ρ1*ρ3) * (ρ1-ρ3) * (ρ2-ρ3) * exp(-4*ρ3*d)
+      (r^2*sinϕ^2-ρ1(r,ξ,c,par1⊥)*ρ3(r,ξ,c)) * (ρ1(r,ξ,c,par1⊥)+ρ3(r,ξ,c)) * (ρ2(r,ξ,c,par2⊥)+ρ3(r,ξ,c))
+      + 2*ρ3(r,ξ,c)*(
+              ρ1(r,ξ,c,par1⊥)^2*ρ2(r,ξ,c,par2⊥) + ρ1(r,ξ,c,par1⊥)*ρ3(r,ξ,c)^2 + r^2*sinϕ^2 * (ρ1(r,ξ,c,par1⊥)-ρ2(r,ξ,c,par2⊥))
+             ) * exp(-2*ρ3(r,ξ,c)*d)
+      - (r^2*sinϕ^2+ρ1(r,ξ,c,par1⊥)*ρ3(r,ξ,c)) * (ρ1(r,ξ,c,par1⊥)-ρ3(r,ξ,c)) * (ρ2(r,ξ,c,par2⊥)-ρ3(r,ξ,c)) * exp(-4*ρ3(r,ξ,c)*d)
      )
    )
 
-    E = 4*ρ1*ρ2*ρ3^2 * (ρ̃1-ρ1)*ϵ1⊥ξ/(ρ1^2-r^2*sinϕ^2) * exp(-2*ρ3*d)
+    E = 4*ρ1(r,ξ,c,par1⊥)*ρ2(r,ξ,c,par2⊥)*ρ3(r,ξ,c)^2 * (ρ̃1(r,ξ,c,par1II,par1⊥)-ρ1(r,ξ,c,par1⊥))*ϵ1⊥(ξ, par1⊥)/(ρ1(r,ξ,c,par1⊥)^2-r^2*sinϕ^2) * exp(-2*ρ3(r,ξ,c)*d)
 
-    D = (γ^-1 * (A - (ρ̃2-ρ2)*ϵ2⊥ξ/(ρ2^2-r^2*sin(ϕ+θ)^2)
+    D = (γ^-1 * (A - (ρ̃2(r,ξ,c,par2II,par2⊥)-ρ2(r,ξ,c,par2⊥))*ϵ2⊥(ξ, par2⊥)/(ρ2(r,ξ,c,par2⊥)^2-r^2*sin(ϕ+θ)^2)
                         *(
                           B*r^2*sin(ϕ+θ)^2 - E*(
-                                                2*r^2*sinϕ*cos(θ)*sin(ϕ+θ) + ρ3^2*sin(θ)^2
+                                                2*r^2*sinϕ*cos(θ)*sin(ϕ+θ) + ρ3(r,ξ,c)^2*sin(θ)^2
                                                )
                           + C
                          )
@@ -208,8 +222,8 @@ end # function papperϵplot
 #    println("∂lnD∂θ = $(substitute(∂lnD∂θ, valuedict))")
 #
 "Returns the torque per unit area of the two-plate system with dielectric functions 
-ϵ1II(ξ), ϵ1⊥(ξ), ϵ2II(ξ) and ϵ2⊥(ξ), ϵ3(ξ), separation dval, principal axes angle θval and temperature T. Uses a trapeziodal rule if trapz=true"
-function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 1e10u"m^-1", rtol = 1e-2, atolunitful=1e-19u"J*m^-2", usetrapz=false, trapzrdiv=100, trapzϕdiv=100)
+ϵ1II(ξ), ϵ1⊥(ξ), ϵ2II(ξ) and ϵ2⊥(ξ), ϵ3(ξ), separation dval, principal axes angle θval and temperature T. Uses a trapeziodal rule if trapz=true. A value rcutoff = 0 m^-1 will take rcutoff=d^-1"
+function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 0u"m^-1", rtol = 1e-2, atolunitful=1e-19u"J*m^-2", usetrapz=false, trapzrdiv=100, trapzϕdiv=100)
     # r is the transverse wavenumber
 
     if !(typeof(T) <: Unitful.Temperature)
@@ -226,6 +240,9 @@ function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 1e10u"m^-1
     #ξn = uconvert(u"Hz2π", k_B*T/ħ)
 
 
+    if rcutoff == 0u"m^-1"
+        rcutoff = dval^-1
+    end # if
     rcutoffnounit = ustrip(u"m^-1", rcutoff) # Strip units for hcubature,
     #has to match inserted length unit below
 
@@ -267,9 +284,11 @@ function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 1e10u"m^-1
             mm = [integtrapz(r, ϕ) for r in rr, ϕ in ϕϕ] # Lacks prefactor, also r dr missing
             phiint = uconvert(u"aJ", k_B*T/(4*π^2)) * trapz(ϕϕ, mm, Val(2))
             phiint[phiint .< 1e-5u"aJ"] .= 0u"aJ"
-            #phiint = phiint .* rr # Add factor r
-            return stack((reverse(phiint), reverse(rr)))
-            #M += k_B*T/(4*π^2) * trapz((rr, ϕϕ), mm)
+            phiint = phiint .* rr # Add factor r
+            println("Integrated over ϕ for ξn = $ξn")
+            #display(stack((reverse(phiint), reverse(rr))))
+            rint = trapz(rr, phiint)
+            M += rint
         else
             Marray = (k_B*T/(4*π^2) .* hcubature(integ, (0, -π/2), (rcutoffnounit, π/2), rtol=rtol)
                                                  #atol=atol)
@@ -294,7 +313,7 @@ function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 1e10u"m^-1
         end # if
 
         println("M contribution from ξn = $ξn calculated, current torque M = $M")
-        ξn += uconvert(u"Hz2π", k_B*T/ħ)
+        ξn += uconvert(u"THz2π", k_B*T/ħ)
     end # while
 
     return M
@@ -469,9 +488,9 @@ function Mplot(T, ξ, par1II, par1⊥, par2II, par2⊥, dval, θval; rmin = -4, 
         for j in 1:length(ϕrange)
             try
                 if rfac
-                    MM[i, j] = r∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, c_0)
+                    MM[i, j] = r∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, 1, c_0)
                 else
-                    MM[i, j] = ∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, c_0)
+                    MM[i, j] = ∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, 1, c_0)
                 end # if
             catch e
                 println("Error at r = $(rrange[i]) and ϕ = $(ϕrange[j])")

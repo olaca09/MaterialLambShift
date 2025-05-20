@@ -15,6 +15,8 @@ export Ddebug
 export ∂lnD∂θfn
 export ∂lnD∂θ
 
+export symbintegral
+
 # Two-oscillator model parameters used in Munday, Barash and Capasso (2005)
 const quartzII = (1.920, 1.350, 2.093e14u"Hz2π", 2.040e16u"Hz2π")
 const quartz⊥ = (1.960, 1.377, 2.093e14u"Hz2π", 2.024e16u"Hz2π")
@@ -220,10 +222,21 @@ end # function papperϵplot
 #                      d => dval, c => c_0])
 #
 #    println("∂lnD∂θ = $(substitute(∂lnD∂θ, valuedict))")
-#
+
+"Attempts to find symbolic integrals over ϕ and r"
+function symbintegral()
+    intega = integrate(A, ϕ, symbolic=true, detailed=false)
+    #integϕ = integrate(r∂lnD∂θexpr, ϕ, symbolic=true, detailed=false)
+    #integr = integrate(integϕ, r, symbolic=true, detailed=false)
+
+    integrfcn = build_function(intega, θ, r, ϕ, ξ, par1II, par1⊥, par2II, par2⊥, d, c,
+                              expression = Val{false})
+    return integrfcn
+end # function symbintegral
+
 "Returns the torque per unit area of the two-plate system with dielectric functions 
 ϵ1II(ξ), ϵ1⊥(ξ), ϵ2II(ξ) and ϵ2⊥(ξ), ϵ3(ξ), separation dval, principal axes angle θval and temperature T. Uses a trapeziodal rule if trapz=true. A value rcutoff = 0 m^-1 will take rcutoff=d^-1"
-function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 0u"m^-1", rtol = 1e-2, atolunitful=1e-19u"J*m^-2", usetrapz=false, trapzrdiv=100, trapzϕdiv=100)
+function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 0u"m^-1", rtol = 1e-2, atolunitful=1e-19u"J*m^-2", integmethod="trapz", trapzrdiv=100, trapzϕdiv=100, ξcutofffactor=1e-5)
     # r is the transverse wavenumber
 
     if !(typeof(T) <: Unitful.Temperature)
@@ -245,6 +258,8 @@ function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 0u"m^-1", 
     end # if
     rcutoffnounit = ustrip(u"m^-1", rcutoff) # Strip units for hcubature,
     #has to match inserted length unit below
+    
+    ξloopcounter = 0 # Counts subsequenct frequencies that haven't added to the result
 
     while ξn < ξcutoff
 #        integ = rϕ -> rϕ[1] * substitute(∂lnD∂θ, Dict([θ => θval, r => rϕ[1]*u"m^-1", ϕ => rϕ[2], 
@@ -263,7 +278,7 @@ function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 0u"m^-1", 
             return integrandval
         end # function integ
 
-            function integ(rϕ)
+        function integ(rϕ)
             #println("Calculating torque for r = $(rϕ[1]), ξ=$ξn, and ϕ = $(rϕ[2])")
             integrandval = r∂lnD∂θfn(θval, rϕ[1]*u"m^-1", rϕ[2], ξn, calciteII, calcite⊥,
                                              BaTiO3II, BaTiO3⊥, dval, c_0)
@@ -277,7 +292,7 @@ function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 0u"m^-1", 
 
         # Split integration into two domains in ϕ, to avoid divisions by zero
         # at sin(ϕ) = ± 1
-        if usetrapz
+        if integmethod == "trapz"
             η = 1e-5u"m^-1"
             rr = range(η, rcutoff, length=trapzrdiv)
             ϕϕ = range(0, 2π, length=trapzϕdiv)
@@ -288,8 +303,36 @@ function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 0u"m^-1", 
             println("Integrated over ϕ for ξn = $ξn")
             #display(stack((reverse(phiint), reverse(rr))))
             rint = trapz(rr, phiint)
+            
+            if rint < ξcutofffactor*M
+                ξloopcounter += 1
+            end # if
             M += rint
-        else
+        elseif integmethod == "mixed"
+            η = 1e-5u"m^-1"
+            rr = range(η, rcutoff, length=trapzrdiv)
+
+            integmix = [ϕ -> integtrapz(r, ϕ) for r in rr] # Lacks prefactor, also r dr missing
+
+            atoleffective = ustrip.(u"m^2", atol./(rr*rcutoff))
+            ϕintervals = (-π/2, π/4, π/2, 5*π/4, 3*π/2) 
+            # Above probably depend on θ and so should be calculated
+            phiint = []
+            phiint .+= [uconvert(u"aJ", k_B*T/(4*π^2)) * quadgk(integmix[i], ϕintervals...,
+                                                                rtol=rtol,
+                                                                atol=atoleffective[i])[1]
+                          for (i, r) in enumerate(rr)]
+            phiint[phiint .< 1e-5u"aJ"] .= 0u"aJ"
+            phiint = phiint .* rr # Add factor r
+            println("Integrated over ϕ for ξn = $ξn")
+            display(stack((reverse(phiint), reverse(rr))))
+            rint = trapz(rr, phiint)
+            
+            if rint < ξcutofffactor*M
+                ξloopcounter += 1
+            end # if
+            M += rint
+        elseif integmethod == "hcubature"
             Marray = (k_B*T/(4*π^2) .* hcubature(integ, (0, -π/2), (rcutoffnounit, π/2), rtol=rtol)
                                                  #atol=atol)
                       .*u"m^-2")
@@ -300,6 +343,8 @@ function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 0u"m^-1", 
                       .*u"m^-2")
             M += Marray[1]
             Merror += Marray[2]
+        else
+            throw(ErrorException("Integration method $integmethod not recognized"))
         end # if
 #        Marray = (k_B*T/(4*π^2) .* hcubature(integ, (0, π/2), (rcutoff, 3π/2), rtol=rtol)
 #                                             #atol=atol)
@@ -310,6 +355,11 @@ function twoplateM(dval, θval, T; ξcutoff = 1e18u"Hz2π", rcutoff = 0u"m^-1", 
 
         if ξn == 0 # Halve first term
             M = M/2
+        end # if
+
+        if ξloopcounter > 2
+            println("Last few Matsubara terms has not contributed significantly to the torque, breaking loop")
+            break
         end # if
 
         println("M contribution from ξn = $ξn calculated, current torque M = $M")
@@ -488,9 +538,9 @@ function Mplot(T, ξ, par1II, par1⊥, par2II, par2⊥, dval, θval; rmin = -4, 
         for j in 1:length(ϕrange)
             try
                 if rfac
-                    MM[i, j] = r∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, 1, c_0)
+                    MM[i, j] = r∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, c_0)
                 else
-                    MM[i, j] = ∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, 1, c_0)
+                    MM[i, j] = ∂lnD∂θfn(θval, rrange[i], ϕrange[j], ξ, par1II, par1⊥, par2II, par2⊥, dval, c_0)
                 end # if
             catch e
                 println("Error at r = $(rrange[i]) and ϕ = $(ϕrange[j])")

@@ -17,9 +17,10 @@ using PhysicalConstants.CODATA2018: ħ, k_B, c_0
 using Unitful
 using Printf
 using Symbolics
+using SymbolicNumericIntegration
 
 # Code for Birefringent plate calculations
-include("BirefringentPlates.jl")
+# include("BirefringentPlates.jl")
 # For proper execution by pyjulia exported names must be ASCII #
 #                           :c                                 #
 
